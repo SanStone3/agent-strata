@@ -1,0 +1,53 @@
+# Installation workflow
+
+Use this reference only when installing, upgrading, or changing scope.
+
+## Scope map
+
+| Client | Global | Project |
+|---|---|---|
+| Codex skill | `~/.agents/skills/layered-orchestration/` | `<repo>/.agents/skills/layered-orchestration/` |
+| Codex config | `~/.codex/config.toml` | `<repo>/.codex/config.toml` |
+| Codex agents | `~/.codex/agents/` | `<repo>/.codex/agents/` |
+| Codex rules | `~/.codex/AGENTS.md` | `<repo>/AGENTS.md` |
+| Claude skill | `~/.claude/skills/layered-orchestration/` | `<repo>/.claude/skills/layered-orchestration/` |
+| Claude config | `~/.claude/settings.json` | `<repo>/.claude/settings.json` |
+| Claude agents | `~/.claude/agents/` | `<repo>/.claude/agents/` |
+| Claude rules | `~/.claude/CLAUDE.md` | `<repo>/CLAUDE.md` |
+
+Codex's current official personal skill location is `~/.agents/skills/`. Existing environments may also expose legacy or installer-managed locations. Use the active client's discovery output rather than relocating a working install without need.
+
+## Safe merge procedure
+
+1. Identify the home directory or repository root explicitly. Never use an unresolved variable as a destructive target.
+2. Read every target file and list same-name Agent definitions.
+3. Record client version and current model. For Claude, check whether Fable appears or can be selected only if the user wants Fable.
+4. Create timestamped backups of existing files. Do not back up secrets into the repository.
+5. Merge syntax-aware:
+   - TOML: add or update only the requested keys/tables.
+   - JSON: preserve every unrelated object and array.
+   - Markdown rules: append or update one delimited `Layered Agent Orchestration` section.
+   - Agent files: compare before replacement; preserve user customization or obtain direction.
+6. Copy the relevant native Agent templates from `../assets/templates/`.
+7. Parse all resulting files and run [validation.md](validation.md).
+8. Inspect client status for the actually resolved model and effort. A requested `xhigh` is not sufficient evidence: if a Claude alias resolves to a model without `xhigh`, pin an organization-approved compatible full ID or report the invariant as unmet.
+9. Report backups, changed paths, effective model/effort, conflicts, and whether a new session is required.
+
+## Boundaries
+
+- Do not enable bypass permissions or widen tool allowlists.
+- Do not add API keys, usage credits, payment settings, or external bridge processes.
+- Do not make Codex invoke Claude or Claude invoke Codex.
+- Do not assume fallback handles authentication, billing, rate-limit, request-size, or transport errors.
+- Do not commit global configuration. Project configuration may be committed only when the user requested shared project setup and project rules permit it.
+- If a managed organization setting blocks a recommendation, report it as authoritative.
+
+## AI-facing prompt
+
+After installing this skill, a user can ask:
+
+```text
+Use layered-orchestration to install Agent Strata for this client at global scope.
+Inspect and back up the existing configuration, merge without overwriting unrelated settings,
+keep coding workers at xhigh, validate the result, and do not configure cross-provider calls.
+```
