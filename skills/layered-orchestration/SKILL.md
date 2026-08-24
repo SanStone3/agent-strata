@@ -31,12 +31,12 @@ When both providers are requested, configure them as two independent clients. Ne
 
 Before delegating, classify the work:
 
-- Fast read-only discovery -> Luna or Haiku scout.
-- Exact mechanical operation -> Luna executor when using Codex; otherwise handle directly or use a tightly bounded worker.
-- Ordinary bounded implementation -> Terra or Sonnet worker at `xhigh`.
-- Cross-module, ambiguous, security-sensitive, concurrency-sensitive, lifecycle-sensitive, migration-sensitive, or expensive-to-rework implementation -> Sol or Opus worker at `xhigh`.
-- Consequential final review -> Sol or Opus reviewer at `xhigh`.
-- Exceptionally long, high-consequence Claude work -> Fable only when explicitly selected and availability or approved usage credits are confirmed.
+- Fast read-only discovery -> `luna_scout` / `haiku-scout`.
+- Exact mechanical operation -> `luna_executor` when using Codex; otherwise handle directly or use a tightly bounded worker.
+- Ordinary bounded implementation -> `terra_worker` / `sonnet-worker` at `xhigh`.
+- Cross-module, ambiguous, security-sensitive, concurrency-sensitive, lifecycle-sensitive, migration-sensitive, or expensive-to-rework implementation -> `sol_worker` / `opus-worker` at `xhigh`.
+- Consequential final review -> `sol_reviewer` / `opus-reviewer` at `xhigh`.
+- Exceptionally long, high-consequence Claude work -> `fable-worker`, with `fable-reviewer` for the final read-only pass, only when Fable is explicitly selected and availability or approved usage credits are confirmed. An explicit Fable main session starts as `claude --agent fable-controller`.
 
 Do not delegate merely because a specialized agent exists. Continue locally when the task is small or when each step depends on the previous result.
 
