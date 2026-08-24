@@ -143,6 +143,13 @@ python3 skills/layered-orchestration/scripts/validate.py --repo .
 npx -y skills@1.5.23 list -g --json
 ```
 
+验证本机已安装的活配置（模型、effort、工具列表、核心政策）：
+
+```bash
+python3 skills/layered-orchestration/scripts/validate.py --repo . --codex-home ~/.codex
+python3 skills/layered-orchestration/scripts/validate.py --repo . --claude-home ~/.claude
+```
+
 客户端 smoke check：
 
 - Codex：启动新会话，确认 skill 可见；让主会话列出可用 custom agents，不执行写入。

@@ -88,6 +88,22 @@ CODEX_AGENTS_POLICIES = {
     ),
 }
 
+CLAUDE_RULES_POLICIES = {
+    "max three active subagents": re.compile(
+        r"\b(?:at most three active subagents|at most three workers active)\b", re.IGNORECASE
+    ),
+    "one writer by default": re.compile(
+        r"\b(?:one writer by default|only one code-writing worker by default)\b", re.IGNORECASE
+    ),
+    "no descendant agents": re.compile(
+        r"\b(?:subagents do not spawn descendants|workers must not\b[^\n]*\bspawn more agents)\b", re.IGNORECASE
+    ),
+    "no cross-provider invocation": re.compile(
+        r"\b(?:invoke another coding-agent provider|never invoke codex\b[^\n]*\bcross-provider wrapper)\b",
+        re.IGNORECASE,
+    ),
+}
+
 READ_ONLY_TOOLS = frozenset({"Read", "Grep", "Glob"})
 WRITE_TOOLS = frozenset({"Read", "Grep", "Glob", "Edit", "Write", "Bash"})
 
@@ -396,17 +412,20 @@ class Validator:
             if not isinstance(instructions, str) or "invoke Claude or another external coding agent" not in instructions:
                 self.error(f"{filename} must prohibit cross-provider invocation")
 
-    def validate_codex_policies(self, path: Path) -> None:
+    def validate_policies(self, path: Path, policies: dict[str, re.Pattern[str]], label: str) -> None:
         if not self.require(path):
             return
         try:
             text = path.read_text(encoding="utf-8")
         except OSError as exc:
-            self.error(f"cannot read Codex AGENTS policy {self.display_path(path)}: {exc}")
+            self.error(f"cannot read {label} policy {self.display_path(path)}: {exc}")
             return
-        for description, pattern in CODEX_AGENTS_POLICIES.items():
+        for description, pattern in policies.items():
             if not pattern.search(text):
-                self.error(f"{self.display_path(path)} missing Codex AGENTS policy: {description}")
+                self.error(f"{self.display_path(path)} missing {label} policy: {description}")
+
+    def validate_codex_policies(self, path: Path) -> None:
+        self.validate_policies(path, CODEX_AGENTS_POLICIES, "Codex AGENTS")
 
     def validate_codex(self) -> None:
         template = self.skill / "assets/templates/codex"
@@ -488,6 +507,7 @@ class Validator:
         template = self.skill / "assets/templates/claude"
         self.validate_claude_settings(template / "settings-snippet.json", template=True)
         self.validate_claude_agents(template / "agents")
+        self.validate_policies(template / "CLAUDE-snippet.md", CLAUDE_RULES_POLICIES, "Claude rules")
 
         if self.claude_home is None:
             return
@@ -498,6 +518,7 @@ class Validator:
         if self.require(settings_path):
             self.validate_claude_settings(settings_path, template=False)
         self.validate_claude_agents(self.claude_home / "agents")
+        self.validate_policies(self.claude_home / "CLAUDE.md", CLAUDE_RULES_POLICIES, "Claude rules")
 
     def validate_content(self) -> None:
         markdown_files = list(self.root.rglob("*.md"))

@@ -30,7 +30,7 @@ To inspect an active Claude Code setup:
 python3 skills/layered-orchestration/scripts/validate.py --repo . --claude-home /path/to/claude-home
 ```
 
-This is read-only and checks `/path/to/claude-home/settings.json` (`model`, `effortLevel`) and its seven expected `agents/*.md` files against the tier invariants: model alias, effort, tool lists, `maxTurns`, and the no-descendant prohibition. It does not parse a personalized `CLAUDE.md` rules file; keep that section aligned with `assets/templates/claude/CLAUDE-snippet.md` yourself.
+This is read-only and checks `/path/to/claude-home/settings.json` (`model`, `effortLevel`) and its seven expected `agents/*.md` files against the tier invariants: model alias, effort, tool lists, `maxTurns`, and the no-descendant prohibition. It also checks that `/path/to/claude-home/CLAUDE.md` still states the core policies (max three subagents, one writer, no descendants, no cross-provider invocation); the patterns tolerate reworded personal variants, so a customized rules file passes as long as the policies survive.
 
 ## Installed configuration
 

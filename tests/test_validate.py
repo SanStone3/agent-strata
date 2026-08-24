@@ -167,6 +167,7 @@ class ValidatorMutationTests(unittest.TestCase):
         template = self.skill / "assets" / "templates" / "claude"
         shutil.copy(template / "settings-snippet.json", claude_home / "settings.json")
         shutil.copytree(template / "agents", claude_home / "agents")
+        shutil.copy(template / "CLAUDE-snippet.md", claude_home / "CLAUDE.md")
         code, output = self.validate(claude_home=claude_home)
         self.assertEqual(0, code, output)
         settings = claude_home / "settings.json"
@@ -178,6 +179,15 @@ class ValidatorMutationTests(unittest.TestCase):
         self.assertEqual(1, code)
         self.assertIn("Opus- or Fable-class", output)
         shutil.copy(template / "settings-snippet.json", settings)
+        rules = claude_home / "CLAUDE.md"
+        rules.write_text(
+            rules.read_text(encoding="utf-8").replace("one writer by default", "many writers", 1),
+            encoding="utf-8",
+        )
+        code, output = self.validate(claude_home=claude_home)
+        self.assertEqual(1, code)
+        self.assertIn("missing Claude rules policy: one writer by default", output)
+        shutil.copy(template / "CLAUDE-snippet.md", rules)
         agent = claude_home / "agents" / "opus-reviewer.md"
         agent.write_text(
             agent.read_text(encoding="utf-8").replace("effort: xhigh", "effort: high", 1),
