@@ -56,3 +56,11 @@ Reviewer returns findings first, ordered by severity. Each finding contains loca
 ## Controller synthesis
 
 The controller checks returned claims against primary evidence, inspects all writes, resolves contradictions, and runs allowed final validation. It never reports a subagent's unverified statement as completed work.
+
+When a subagent discovers that its boundary is wrong, stop that packet and rewrite it. Do not let the subagent silently expand scope.
+
+## Effort verification
+
+A `sonnet`/`opus` alias that resolves to a 4.6-class model does not support `xhigh`; the client silently lowers the request to the highest supported level. A configured `xhigh` is not an effective `xhigh` until `/status` or equivalent evidence confirms the resolved model. Otherwise pin a full model ID that supports `xhigh`, or report the coding-worker invariant as unmet.
+
+Fable authentication, billing, rate-limit, request-size, and transport errors do not trigger model fallback. Stop the branch and return control; do not retry.
