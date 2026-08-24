@@ -29,6 +29,7 @@ Required return fields:
 ```
 
 Do not forward the full user conversation when a compact packet is sufficient. Include project instructions or facts the subagent cannot otherwise access.
+Named custom roles use compact task packets or limited recent-turn forks. Never combine explicit custom type with full-history fork.
 
 ## Write ownership
 

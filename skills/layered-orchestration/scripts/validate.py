@@ -50,6 +50,44 @@ CODEX_AGENTS = {
     "sol-reviewer.toml": ("sol_reviewer", "gpt-5.6-sol", "xhigh", "read-only"),
 }
 
+CODEX_CONFIG_ROOT_KEYS = frozenset(
+    {"model", "model_context_window", "model_auto_compact_token_limit", "model_reasoning_effort"}
+)
+CODEX_CONFIG_TABLE_KEYS = {
+    "agents": frozenset(
+        {
+            "enabled",
+            "max_concurrent_threads_per_session",
+            "default_subagent_model",
+            "default_subagent_reasoning_effort",
+        }
+    )
+}
+
+CODEX_AGENTS_POLICIES = {
+    "max three active subagents": re.compile(
+        r"\b(?:at most three active subagents|at most three spawned workers open)\b", re.IGNORECASE
+    ),
+    "one writer by default": re.compile(
+        r"\b(?:one writer by default|only one code-writing worker by default)\b", re.IGNORECASE
+    ),
+    "no descendant agents": re.compile(
+        r"\b(?:subagents do not spawn descendants|workers must not\b[^\n]*\bspawn more agents)\b", re.IGNORECASE
+    ),
+    "no cross-provider invocation": re.compile(
+        r"\b(?:invoke another coding-agent provider|never invoke claude\b[^\n]*\bcross-provider wrapper)\b",
+        re.IGNORECASE,
+    ),
+    "compact or limited fork": re.compile(
+        r"\b(?:named custom roles use compact task packets or limited recent-turn forks|when spawning a named custom role, pass a compact task packet or a limited recent-turn fork)\b",
+        re.IGNORECASE,
+    ),
+    "no full-history custom fork": re.compile(
+        r"\b(?:never combine explicit custom type with full-history fork|do not use a full-history fork with an explicit custom agent type)\b",
+        re.IGNORECASE,
+    ),
+}
+
 READ_ONLY_TOOLS = frozenset({"Read", "Grep", "Glob"})
 WRITE_TOOLS = frozenset({"Read", "Grep", "Glob", "Edit", "Write", "Bash"})
 
@@ -65,41 +103,57 @@ CLAUDE_AGENTS = {
 
 
 class Validator:
-    def __init__(self, repo: Path | None, skill: Path) -> None:
+    def __init__(self, repo: Path | None, skill: Path, codex_home: Path | None = None) -> None:
         self.repository_mode = repo is not None
         self.root = repo.resolve() if repo is not None else skill.resolve()
         self.skill = self.root / "skills" / "layered-orchestration" if repo is not None else self.root
+        self.codex_home = codex_home.resolve() if codex_home is not None else None
         self.errors: list[str] = []
 
     def error(self, message: str) -> None:
         self.errors.append(message)
 
+    def display_path(self, path: Path) -> str:
+        for base in (self.root, self.codex_home):
+            if base is not None:
+                try:
+                    return str(path.relative_to(base))
+                except ValueError:
+                    pass
+        return path.name
+
     def require(self, path: Path) -> bool:
         if not path.is_file():
-            self.error(f"missing file: {path.relative_to(self.root)}")
+            self.error(f"missing file: {self.display_path(path)}")
             return False
         return True
 
-    def load_toml(self, path: Path) -> dict[str, Any]:
+    def load_toml(
+        self,
+        path: Path,
+        *,
+        root_keys: frozenset[str] | None = None,
+        table_keys: dict[str, frozenset[str]] | None = None,
+    ) -> dict[str, Any] | None:
         if tomllib is not None:
             try:
                 with path.open("rb") as handle:
                     return tomllib.load(handle)
             except (OSError, tomllib.TOMLDecodeError) as exc:
-                self.error(f"invalid TOML {path.relative_to(self.root)}: {exc}")
-                return {}
+                self.error(f"invalid TOML {self.display_path(path)}: {exc}")
+                return None
 
-        # Python 3.10 has no tomllib. Parse the deliberately small template
-        # subset without adding a package dependency: tables, strings, ints,
-        # booleans, and triple-quoted multiline strings.
+        # Python 3.10 has no tomllib. Parse the deliberately small relevant
+        # subset without adding a dependency, skipping unrelated config tables.
         try:
             lines = path.read_text(encoding="utf-8").splitlines()
         except OSError as exc:
-            self.error(f"cannot read TOML {path.relative_to(self.root)}: {exc}")
-            return {}
+            self.error(f"cannot read TOML {self.display_path(path)}: {exc}")
+            return None
 
         result: dict[str, Any] = {}
-        current = result
+        current: dict[str, Any] | None = result
+        allowed_keys = root_keys
         multiline_key: str | None = None
         multiline_lines: list[str] = []
         for number, raw_line in enumerate(lines, start=1):
@@ -109,6 +163,9 @@ class Validator:
                     before = raw_line.rsplit('"""', 1)[0]
                     if before:
                         multiline_lines.append(before)
+                    if current is None:
+                        self.error(f"invalid TOML multiline string in {self.display_path(path)}:{number}")
+                        return None
                     current[multiline_key] = "\n".join(multiline_lines)
                     multiline_key = None
                     multiline_lines = []
@@ -119,19 +176,28 @@ class Validator:
                 continue
             if stripped.startswith("[") and stripped.endswith("]"):
                 section = stripped[1:-1].strip()
+                if table_keys is not None and section not in table_keys:
+                    current = None
+                    allowed_keys = None
+                    continue
                 if not section or "." in section:
-                    self.error(f"unsupported TOML table at {path.relative_to(self.root)}:{number}")
-                    return {}
+                    self.error(f"unsupported TOML table at {self.display_path(path)}:{number}")
+                    return None
                 value = result.setdefault(section, {})
                 if not isinstance(value, dict):
-                    self.error(f"conflicting TOML table at {path.relative_to(self.root)}:{number}")
-                    return {}
+                    self.error(f"conflicting TOML table at {self.display_path(path)}:{number}")
+                    return None
                 current = value
+                allowed_keys = table_keys[section] if table_keys is not None else None
+                continue
+            if current is None:
                 continue
             if "=" not in raw_line:
-                self.error(f"invalid TOML line at {path.relative_to(self.root)}:{number}")
-                return {}
+                self.error(f"invalid TOML line at {self.display_path(path)}:{number}")
+                return None
             key, raw_value = (part.strip() for part in raw_line.split("=", 1))
+            if allowed_keys is not None and key not in allowed_keys:
+                continue
             if raw_value == '"""':
                 multiline_key = key
                 multiline_lines = []
@@ -139,18 +205,18 @@ class Validator:
                 try:
                     current[key] = json.loads(raw_value)
                 except json.JSONDecodeError as exc:
-                    self.error(f"invalid TOML string at {path.relative_to(self.root)}:{number}: {exc}")
-                    return {}
+                    self.error(f"invalid TOML string at {self.display_path(path)}:{number}: {exc}")
+                    return None
             elif raw_value in ("true", "false"):
                 current[key] = raw_value == "true"
             elif re.fullmatch(r"[+-]?\d+", raw_value):
                 current[key] = int(raw_value)
             else:
-                self.error(f"unsupported TOML value at {path.relative_to(self.root)}:{number}")
-                return {}
+                self.error(f"unsupported TOML value at {self.display_path(path)}:{number}")
+                return None
         if multiline_key is not None:
-            self.error(f"unterminated TOML multiline string in {path.relative_to(self.root)}")
-            return {}
+            self.error(f"unterminated TOML multiline string in {self.display_path(path)}")
+            return None
         return result
 
     @staticmethod
@@ -265,9 +331,12 @@ class Validator:
                 if not interface.get(key):
                     self.error(f"agents/openai.yaml missing interface.{key}")
 
-    def validate_codex(self) -> None:
-        config_path = self.skill / "assets/templates/codex/config-snippet.toml"
-        config = self.load_toml(config_path)
+    def validate_codex_config(self, config_path: Path) -> None:
+        config = self.load_toml(
+            config_path, root_keys=CODEX_CONFIG_ROOT_KEYS, table_keys=CODEX_CONFIG_TABLE_KEYS
+        )
+        if config is None:
+            return
         if config.get("model") != "gpt-5.6-sol":
             self.error("Codex primary model must be gpt-5.6-sol")
         if config.get("model_reasoning_effort") != "xhigh":
@@ -277,34 +346,77 @@ class Validator:
         if config.get("model_auto_compact_token_limit") != 900_000:
             self.error("Codex auto-compact limit must be 900000")
         agents_config = config.get("agents", {})
+        if not isinstance(agents_config, dict):
+            self.error("Codex agents config must be a table")
+            return
+        if agents_config.get("enabled") is not True:
+            self.error("Codex agents must be enabled")
         if agents_config.get("max_concurrent_threads_per_session") != 3:
             self.error("Codex max concurrent subagents must be 3")
+        if agents_config.get("default_subagent_model") != "gpt-5.6-terra":
+            self.error("Codex default subagent model must be gpt-5.6-terra")
         if agents_config.get("default_subagent_reasoning_effort") != "xhigh":
             self.error("Codex default subagent effort must be xhigh")
 
+    def validate_codex_agents(self, directory: Path) -> None:
         names: set[str] = set()
-        directory = self.skill / "assets/templates/codex/agents"
         for filename, (expected_name, model, effort, sandbox) in CODEX_AGENTS.items():
             path = directory / filename
             if not self.require(path):
                 continue
             values = self.load_toml(path)
+            if values is None:
+                continue
             for key in ("name", "description", "developer_instructions"):
                 if not values.get(key):
                     self.error(f"{filename} missing required key: {key}")
-            if values.get("name") != expected_name:
+            actual_name = values.get("name")
+            if actual_name != expected_name:
                 self.error(f"{filename} has wrong name")
-            if expected_name in names:
-                self.error(f"duplicate Codex agent name: {expected_name}")
-            names.add(expected_name)
+            if isinstance(actual_name, str):
+                if actual_name in names:
+                    self.error(f"duplicate Codex agent name: {actual_name}")
+                names.add(actual_name)
             if values.get("model") != model:
                 self.error(f"{filename} model must be {model}")
             if values.get("model_reasoning_effort") != effort:
                 self.error(f"{filename} effort must be {effort}")
             if values.get("sandbox_mode") != sandbox:
                 self.error(f"{filename} sandbox must be {sandbox}")
-            if "spawn subagents" not in values.get("developer_instructions", ""):
+            instructions = values.get("developer_instructions", "")
+            if not isinstance(instructions, str) or "spawn subagents" not in instructions:
                 self.error(f"{filename} must prohibit descendant agents")
+            if not isinstance(instructions, str) or "invoke Claude or another external coding agent" not in instructions:
+                self.error(f"{filename} must prohibit cross-provider invocation")
+
+    def validate_codex_policies(self, path: Path) -> None:
+        if not self.require(path):
+            return
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError as exc:
+            self.error(f"cannot read Codex AGENTS policy {self.display_path(path)}: {exc}")
+            return
+        for description, pattern in CODEX_AGENTS_POLICIES.items():
+            if not pattern.search(text):
+                self.error(f"{self.display_path(path)} missing Codex AGENTS policy: {description}")
+
+    def validate_codex(self) -> None:
+        template = self.skill / "assets/templates/codex"
+        self.validate_codex_config(template / "config-snippet.toml")
+        self.validate_codex_agents(template / "agents")
+        self.validate_codex_policies(template / "AGENTS-snippet.md")
+
+        if self.codex_home is None:
+            return
+        if not self.codex_home.is_dir():
+            self.error("Codex home must be a directory")
+            return
+        config_path = self.codex_home / "config.toml"
+        if self.require(config_path):
+            self.validate_codex_config(config_path)
+        self.validate_codex_agents(self.codex_home / "agents")
+        self.validate_codex_policies(self.codex_home / "AGENTS.md")
 
     def validate_claude(self) -> None:
         settings_path = self.skill / "assets/templates/claude/settings-snippet.json"
@@ -427,7 +539,10 @@ class Validator:
             return 1
         print("Agent Strata validation passed")
         print(f"Target: {self.root}")
-        print(f"Mode: {'repository' if self.repository_mode else 'installed skill'}")
+        mode = "repository" if self.repository_mode else "installed skill package"
+        if self.codex_home is not None:
+            mode += " + explicit Codex home"
+        print(f"Mode: {mode}")
         print(f"Codex agents: {len(CODEX_AGENTS)}")
         print(f"Claude agents: {len(CLAUDE_AGENTS)}")
         return 0
@@ -435,11 +550,16 @@ class Validator:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--repo", type=Path, help="Agent Strata repository root; omit to validate this installed skill")
+    parser.add_argument(
+        "--repo", type=Path, help="Agent Strata repository root; omit to validate only this installed skill package"
+    )
+    parser.add_argument(
+        "--codex-home", type=Path, help="explicit Codex home to check config.toml, agents, and AGENTS.md"
+    )
     return parser.parse_args()
 
 
 if __name__ == "__main__":
     arguments = parse_args()
     installed_skill = Path(__file__).resolve().parents[1]
-    raise SystemExit(Validator(arguments.repo, installed_skill).run())
+    raise SystemExit(Validator(arguments.repo, installed_skill, arguments.codex_home).run())

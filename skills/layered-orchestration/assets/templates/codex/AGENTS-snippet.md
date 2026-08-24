@@ -11,5 +11,6 @@ For complex work with independent workstreams or noisy bounded exploration, use 
 - Use `sol_reviewer` at `xhigh` for consequential read-only final review.
 - Give every subagent one bounded task packet and require concise evidence-based results.
 - Subagents do not spawn descendants, commit, push, deploy, expand scope, or invoke another coding-agent provider.
+- Named custom roles use compact task packets or limited recent-turn forks. Never combine explicit custom type with full-history fork.
 - Project-specific instructions, user authorization, and existing worktree changes remain authoritative.
 <!-- END AGENT STRATA -->

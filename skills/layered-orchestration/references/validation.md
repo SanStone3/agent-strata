@@ -12,6 +12,16 @@ npx -y skills@1.5.23 add . --list
 
 If OpenAI's `skill-creator` is installed, also run its `quick_validate.py` against `skills/layered-orchestration`.
 
+## Explicit Codex home check
+
+To inspect an active Codex setup, pass its home directory explicitly:
+
+```bash
+python3 skills/layered-orchestration/scripts/validate.py --repo . --codex-home /path/to/codex-home
+```
+
+This is read-only and checks only `/path/to/codex-home/config.toml`, its five expected `agents/*.toml` files, and `/path/to/codex-home/AGENTS.md`. `--repo` validates the source package; `--codex-home` validates those active-client invariants without requiring whole-file equality. Without `--codex-home`, validation does not inspect a default home or claim to validate an active client.
+
 ## Installed configuration
 
 Check, without exposing secrets:
@@ -22,7 +32,7 @@ Check, without exposing secrets:
 4. Scouts/reviewers have read-only tools or sandbox defaults.
 5. Code Workers and consequential Reviewers explicitly request `xhigh`, and client status confirms the resolved model actually supports and uses it.
 6. No Agent instruction invokes the other provider, commits, pushes, deploys, or spawns descendants.
-7. The rules section states max three active subagents and one writer by default.
+7. The rules section states max three active subagents, one writer by default, no descendant or cross-provider invocation, and compact or limited forks for named custom roles.
 8. Existing unrelated settings remain present.
 
 ## Behavioral smoke test
