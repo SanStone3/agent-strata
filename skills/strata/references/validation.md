@@ -5,19 +5,19 @@
 From the repository root:
 
 ```bash
-python3 skills/layered-orchestration/scripts/validate.py --repo .
+python3 skills/strata/scripts/validate.py --repo .
 python3 -m unittest discover -s tests -v
 npx -y skills@1.5.23 add . --list
 ```
 
-If OpenAI's `skill-creator` is installed, also run its `quick_validate.py` against `skills/layered-orchestration`.
+If OpenAI's `skill-creator` is installed, also run its `quick_validate.py` against `skills/strata`.
 
 ## Explicit Codex home check
 
 To inspect an active Codex setup, pass its home directory explicitly:
 
 ```bash
-python3 skills/layered-orchestration/scripts/validate.py --repo . --codex-home /path/to/codex-home
+python3 skills/strata/scripts/validate.py --repo . --codex-home /path/to/codex-home
 ```
 
 This is read-only and checks only `/path/to/codex-home/config.toml`, its five expected `agents/*.toml` files, and `/path/to/codex-home/AGENTS.md`. `--repo` validates the source package; `--codex-home` validates those active-client invariants without requiring whole-file equality. Without `--codex-home`, validation does not inspect a default home or claim to validate an active client.
@@ -27,7 +27,7 @@ This is read-only and checks only `/path/to/codex-home/config.toml`, its five ex
 To inspect an active Claude Code setup:
 
 ```bash
-python3 skills/layered-orchestration/scripts/validate.py --repo . --claude-home /path/to/claude-home
+python3 skills/strata/scripts/validate.py --repo . --claude-home /path/to/claude-home
 ```
 
 This is read-only and checks `/path/to/claude-home/settings.json` (`model`, `effortLevel`) and its seven expected `agents/*.md` files against the tier invariants: model alias, effort, tool lists, `maxTurns`, and the no-descendant prohibition. It also checks that `/path/to/claude-home/CLAUDE.md` still states the core policies (max three subagents, one writer, no descendants, no cross-provider invocation); the patterns tolerate reworded personal variants, so a customized rules file passes as long as the policies survive.
@@ -36,7 +36,7 @@ This is read-only and checks `/path/to/claude-home/settings.json` (`model`, `eff
 
 Check, without exposing secrets:
 
-1. Skill discovery reports `layered-orchestration` for the intended client and scope.
+1. Skill discovery reports `strata` for the intended client and scope.
 2. TOML, JSON, YAML frontmatter, and `agents/openai.yaml` parse successfully.
 3. Each native Agent definition has required frontmatter/keys and a unique name.
 4. Scouts/reviewers have read-only tools or sandbox defaults.

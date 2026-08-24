@@ -11,7 +11,7 @@ from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-SOURCE_SKILL = REPO_ROOT / "skills" / "layered-orchestration"
+SOURCE_SKILL = REPO_ROOT / "skills" / "strata"
 VALIDATOR_PATH = SOURCE_SKILL / "scripts" / "validate.py"
 
 SPEC = importlib.util.spec_from_file_location("agent_strata_validate", VALIDATOR_PATH)
@@ -23,7 +23,7 @@ SPEC.loader.exec_module(VALIDATE)
 class ValidatorMutationTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temporary = tempfile.TemporaryDirectory(prefix="agent-strata-validator-")
-        self.skill = Path(self.temporary.name) / "layered-orchestration"
+        self.skill = Path(self.temporary.name) / "strata"
         shutil.copytree(SOURCE_SKILL, self.skill)
         self.codex_home = Path(self.temporary.name) / "codex-home"
         self.codex_home.mkdir()

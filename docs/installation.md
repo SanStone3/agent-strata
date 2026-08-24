@@ -17,7 +17,7 @@
 
 ```bash
 npx -y skills@1.5.23 add SanStone3/agent-strata \
-  -g -a codex claude-code -s layered-orchestration -y
+  -g -a codex claude-code -s strata -y
 ```
 
 项目级安装：
@@ -25,7 +25,7 @@ npx -y skills@1.5.23 add SanStone3/agent-strata \
 ```bash
 cd /path/to/project
 npx -y skills@1.5.23 add SanStone3/agent-strata \
-  -a codex claude-code -s layered-orchestration -y
+  -a codex claude-code -s strata -y
 ```
 
 ### 第二步：分别让客户端合并配置
@@ -33,7 +33,7 @@ npx -y skills@1.5.23 add SanStone3/agent-strata \
 在 Codex 中：
 
 ```text
-使用 layered-orchestration skill，把 Agent Strata 配置安装到 Codex，全局生效。
+使用 strata skill，把 Agent Strata 配置安装到 Codex，全局生效。
 检查现有 ~/.codex/config.toml、~/.codex/agents 和全局 AGENTS.md；
 先备份，再按 skill 中的 Codex 模板增量合并。不要删除或覆盖现有项目、MCP、hooks、权限和其他模型配置。
 写代码的 Worker 必须使用 xhigh；完成后运行只读校验并显示实际变更。
@@ -42,7 +42,7 @@ npx -y skills@1.5.23 add SanStone3/agent-strata \
 在 Claude Code 中：
 
 ```text
-使用 layered-orchestration skill，把 Agent Strata 配置安装到 Claude Code，全局生效。
+使用 strata skill，把 Agent Strata 配置安装到 Claude Code，全局生效。
 检查现有 ~/.claude/settings.json、~/.claude/agents 和 ~/.claude/CLAUDE.md；
 先备份，再按 skill 中的 Claude 模板增量合并。默认 Opus 1M + xhigh，保留 Fable 显式角色；
 不要覆盖现有 permissions、plugins、hooks 或 MCP。完成后运行只读校验并显示实际变更。
@@ -67,13 +67,13 @@ AI 或人工安装都必须遵守：
 
 ## 手工安装
 
-模板位于 `skills/layered-orchestration/assets/templates/`。以下命令展示目标位置，不建议在已有文件上直接 `cp`。
+模板位于 `skills/strata/assets/templates/`。以下命令展示目标位置，不建议在已有文件上直接 `cp`。
 
 ### Codex 全局
 
 | 内容 | 源模板 | 目标 |
 |---|---|---|
-| Skill | `skills/layered-orchestration/` | `~/.agents/skills/layered-orchestration/` |
+| Skill | `skills/strata/` | `~/.agents/skills/strata/` |
 | 主配置片段 | `codex/config-snippet.toml` | 合并到 `~/.codex/config.toml` |
 | Agent 定义 | `codex/agents/*.toml` | `~/.codex/agents/` |
 | 编排规则 | `codex/AGENTS-snippet.md` | 合并到 `~/.codex/AGENTS.md` |
@@ -86,7 +86,7 @@ Codex 新建 Agent 目录后，重新启动会话以确保发现全部定义。
 
 | 内容 | 目标 |
 |---|---|
-| Skill | `<repo>/.agents/skills/layered-orchestration/` |
+| Skill | `<repo>/.agents/skills/strata/` |
 | 主配置片段 | `<repo>/.codex/config.toml` |
 | Agent 定义 | `<repo>/.codex/agents/` |
 | 编排规则 | `<repo>/AGENTS.md` |
@@ -97,7 +97,7 @@ Codex 仅为受信任项目加载项目 `.codex/` 配置层。不要通过模板
 
 | 内容 | 源模板 | 目标 |
 |---|---|---|
-| Skill | `skills/layered-orchestration/` | `~/.claude/skills/layered-orchestration/` |
+| Skill | `skills/strata/` | `~/.claude/skills/strata/` |
 | 主配置片段 | `claude/settings-snippet.json` | 合并到 `~/.claude/settings.json` |
 | Agent 定义 | `claude/agents/*.md` | `~/.claude/agents/` |
 | 编排规则 | `claude/CLAUDE-snippet.md` | 合并到 `~/.claude/CLAUDE.md` |
@@ -108,7 +108,7 @@ Claude Code 会监视已存在的 skill 和 Agent 目录。若会话启动时目
 
 | 内容 | 目标 |
 |---|---|
-| Skill | `<repo>/.claude/skills/layered-orchestration/` |
+| Skill | `<repo>/.claude/skills/strata/` |
 | 主配置片段 | `<repo>/.claude/settings.json` |
 | Agent 定义 | `<repo>/.claude/agents/` |
 | 编排规则 | `<repo>/CLAUDE.md` |
@@ -139,15 +139,15 @@ Claude Code 会监视已存在的 skill 和 Agent 目录。若会话启动时目
 验证仓库或已复制的模板：
 
 ```bash
-python3 skills/layered-orchestration/scripts/validate.py --repo .
+python3 skills/strata/scripts/validate.py --repo .
 npx -y skills@1.5.23 list -g --json
 ```
 
 验证本机已安装的活配置（模型、effort、工具列表、核心政策）：
 
 ```bash
-python3 skills/layered-orchestration/scripts/validate.py --repo . --codex-home ~/.codex
-python3 skills/layered-orchestration/scripts/validate.py --repo . --claude-home ~/.claude
+python3 skills/strata/scripts/validate.py --repo . --codex-home ~/.codex
+python3 skills/strata/scripts/validate.py --repo . --claude-home ~/.claude
 ```
 
 客户端 smoke check：
@@ -161,7 +161,7 @@ python3 skills/layered-orchestration/scripts/validate.py --repo . --claude-home 
 只卸载 skill：
 
 ```bash
-npx -y skills@1.5.23 remove layered-orchestration -g -y
+npx -y skills@1.5.23 remove strata -g -y
 ```
 
 Agent 文件、配置片段和规则文件是独立安装的，卸载 skill 不会自动删除它们。应根据安装前备份与变更清单逐项回滚，避免删除同名但已被用户定制的内容。

@@ -6,11 +6,11 @@ Use this reference only when installing, upgrading, or changing scope.
 
 | Client | Global | Project |
 |---|---|---|
-| Codex skill | `~/.agents/skills/layered-orchestration/` | `<repo>/.agents/skills/layered-orchestration/` |
+| Codex skill | `~/.agents/skills/strata/` | `<repo>/.agents/skills/strata/` |
 | Codex config | `~/.codex/config.toml` | `<repo>/.codex/config.toml` |
 | Codex agents | `~/.codex/agents/` | `<repo>/.codex/agents/` |
 | Codex rules | `~/.codex/AGENTS.md` | `<repo>/AGENTS.md` |
-| Claude skill | `~/.claude/skills/layered-orchestration/` | `<repo>/.claude/skills/layered-orchestration/` |
+| Claude skill | `~/.claude/skills/strata/` | `<repo>/.claude/skills/strata/` |
 | Claude config | `~/.claude/settings.json` | `<repo>/.claude/settings.json` |
 | Claude agents | `~/.claude/agents/` | `<repo>/.claude/agents/` |
 | Claude rules | `~/.claude/CLAUDE.md` | `<repo>/CLAUDE.md` |
@@ -47,7 +47,7 @@ Codex's current official personal skill location is `~/.agents/skills/`. Existin
 After installing this skill, a user can ask:
 
 ```text
-Use layered-orchestration to install Agent Strata for this client at global scope.
+Use strata to install Agent Strata for this client at global scope.
 Inspect and back up the existing configuration, merge without overwriting unrelated settings,
 keep coding workers at xhigh, validate the result, and do not configure cross-provider calls.
 ```

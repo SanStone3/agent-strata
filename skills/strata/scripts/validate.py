@@ -128,7 +128,7 @@ class Validator:
     ) -> None:
         self.repository_mode = repo is not None
         self.root = repo.resolve() if repo is not None else skill.resolve()
-        self.skill = self.root / "skills" / "layered-orchestration" if repo is not None else self.root
+        self.skill = self.root / "skills" / "strata" if repo is not None else self.root
         self.codex_home = codex_home.resolve() if codex_home is not None else None
         self.claude_home = claude_home.resolve() if claude_home is not None else None
         self.errors: list[str] = []
@@ -337,8 +337,8 @@ class Validator:
         if not self.require(path):
             return
         values = self.load_yaml(path, frontmatter=True)
-        if values.get("name") != "layered-orchestration":
-            self.error("SKILL.md name must be layered-orchestration")
+        if values.get("name") != "strata":
+            self.error("SKILL.md name must be strata")
         description = values.get("description", "")
         for phrase in ("Codex", "Claude Code", "xhigh", "do not use"):
             if phrase not in description:

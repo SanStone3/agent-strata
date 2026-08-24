@@ -1,4 +1,4 @@
 interface:
-  display_name: "Layered Agent Orchestration"
+  display_name: "Agent Strata"
   short_description: "Route complex work through capability-tiered agents"
   default_prompt: "Use layered orchestration to plan and route this task safely."

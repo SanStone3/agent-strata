@@ -1,6 +1,6 @@
 # Agent Strata
 
-一套面向 **Codex** 与 **Claude Code** 的分层 Agent 编排方案：主会话保留目标、约束和最终责任，把探索、实现、验证与审查交给不同能力层级的原生子 Agent。
+一套面向 **Codex** 与 **Claude Code** 的分层 Agent 编排方案，以名为 **`strata`** 的 skill 分发：主会话保留目标、约束和最终责任，把探索、实现、验证与审查交给不同能力层级的原生子 Agent。
 
 > 这不是“尽可能多开 Agent”的方案。它只在任务能安全拆分时并行，默认最多 3 个子 Agent、同时只有 1 个写入者，并让写代码的 Agent 使用 `xhigh` 推理强度。
 
@@ -14,6 +14,7 @@ Agent Strata 采用四条核心原则：
 2. **按工作形态选模型**：快速模型负责查找，平衡模型负责常规实现，最强模型负责复杂实现与高风险审查。
 3. **默认一个写入者**：并行优先用于只读探索、资料核验和审查；写入任务只有路径完全不重叠时才例外。
 4. **结果压缩回传**：子 Agent 返回结论、证据、改动、验证和风险，不把整段日志倒回主会话。
+5. **过程可观测**：委派前列出 Agent 分工，每个子 Agent 启动、阻塞、完成时在主线程简短报告，委派过程不是黑盒。
 
 ```mermaid
 flowchart TB
@@ -55,15 +56,15 @@ Claude 的 `sonnet` / `opus` alias 在部分第三方 provider 上可能解析�
 npx -y skills@1.5.23 add SanStone3/agent-strata \
   --global \
   --agent codex claude-code \
-  --skill layered-orchestration \
+  --skill strata \
   --yes
 ```
 
 只安装到一个客户端：
 
 ```bash
-npx -y skills@1.5.23 add SanStone3/agent-strata -g -a codex -s layered-orchestration -y
-npx -y skills@1.5.23 add SanStone3/agent-strata -g -a claude-code -s layered-orchestration -y
+npx -y skills@1.5.23 add SanStone3/agent-strata -g -a codex -s strata -y
+npx -y skills@1.5.23 add SanStone3/agent-strata -g -a claude-code -s strata -y
 ```
 
 项目级安装时去掉 `--global`，并在项目根目录执行。
@@ -73,7 +74,7 @@ npx -y skills@1.5.23 add SanStone3/agent-strata -g -a claude-code -s layered-orc
 安装 skill 后，在 Codex 或 Claude Code 中分别发送：
 
 ```text
-使用 layered-orchestration skill，为当前客户端安装 Agent Strata 的全局配置。
+使用 strata skill，为当前客户端安装 Agent Strata 的全局配置。
 先检查现有配置和当前版本；备份后只做增量合并，不覆盖无关设置。
 采用推荐模型分层，主会话与代码 Worker 使用 xhigh；安装完成后运行校验并报告差异。
 不要配置 Codex 与 Claude 互相调用。
@@ -132,7 +133,7 @@ claude --agent fable-controller
 ## 仓库内容
 
 ```text
-skills/layered-orchestration/
+skills/strata/
 ├── SKILL.md                 # AI 的入口与路由规则
 ├── references/              # 安装、双端配置、任务契约和校验说明
 ├── assets/templates/        # 可合并的 Codex / Claude 模板
@@ -147,9 +148,9 @@ tests/
 ## 校验
 
 ```bash
-python3 skills/layered-orchestration/scripts/validate.py --repo .
+python3 skills/strata/scripts/validate.py --repo .
 python3 /path/to/skill-creator/scripts/quick_validate.py \
-  skills/layered-orchestration
+  skills/strata
 python3 -m unittest discover -s tests -v
 npx -y skills@1.5.23 add . --list
 ```

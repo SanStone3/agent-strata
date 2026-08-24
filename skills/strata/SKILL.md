@@ -1,9 +1,9 @@
 ---
-name: layered-orchestration
+name: strata
 description: Configure or run capability-tiered native subagent workflows for complex Codex or Claude Code tasks, with one controller, one writer by default, xhigh coding workers, bounded task packets, and provider isolation. Use for multi-part work, noisy independent exploration, high-risk review, or global/project installation of this orchestration pattern; do not use for small sequential or same-file tasks.
 ---
 
-# Layered Orchestration
+# Strata
 
 Keep one primary controller responsible for the complete objective, authorization boundaries, project rules, conflict resolution, final validation, and delivery. Delegate only bounded work whose isolation or noise reduction justifies the coordination cost.
 

@@ -18,7 +18,7 @@ jobs:
       - name: Install validation dependency
         run: python3 -m pip install -r requirements-dev.txt
       - name: Validate skill and templates
-        run: python3 skills/layered-orchestration/scripts/validate.py --repo .
+        run: python3 skills/strata/scripts/validate.py --repo .
       - name: Run validator mutation tests
         run: python3 -m unittest discover -s tests -v
       - name: Check skill discovery

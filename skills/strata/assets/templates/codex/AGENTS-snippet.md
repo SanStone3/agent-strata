@@ -1,7 +1,7 @@
 <!-- BEGIN AGENT STRATA -->
 ## Layered Agent Orchestration
 
-For complex work with independent workstreams or noisy bounded exploration, use the `layered-orchestration` skill and native Codex subagents. Keep the current main session as the sole controller and final owner.
+For complex work with independent workstreams or noisy bounded exploration, use the `strata` skill and native Codex subagents. Keep the current main session as the sole controller and final owner.
 
 - Do not delegate small, sequential, or same-file tasks.
 - Keep at most three active subagents and one writer by default.
