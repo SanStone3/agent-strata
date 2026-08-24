@@ -12,5 +12,6 @@ For complex work with independent workstreams or noisy bounded exploration, use 
 - Use Fable roles only when Fable is explicitly selected and availability or approved usage credits are confirmed; do not retry quota/billing failures.
 - Give every subagent one bounded task packet and require concise evidence-based results.
 - Subagents do not spawn descendants, commit, push, deploy, expand scope, or invoke another coding-agent provider.
+- Before delegating, state the planned agent split; report briefly in the main thread when each subagent starts, blocks, and completes.
 - Project-specific instructions, user authorization, and existing worktree changes remain authoritative.
 <!-- END AGENT STRATA -->
