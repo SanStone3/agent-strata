@@ -103,18 +103,25 @@ CLAUDE_AGENTS = {
 
 
 class Validator:
-    def __init__(self, repo: Path | None, skill: Path, codex_home: Path | None = None) -> None:
+    def __init__(
+        self,
+        repo: Path | None,
+        skill: Path,
+        codex_home: Path | None = None,
+        claude_home: Path | None = None,
+    ) -> None:
         self.repository_mode = repo is not None
         self.root = repo.resolve() if repo is not None else skill.resolve()
         self.skill = self.root / "skills" / "layered-orchestration" if repo is not None else self.root
         self.codex_home = codex_home.resolve() if codex_home is not None else None
+        self.claude_home = claude_home.resolve() if claude_home is not None else None
         self.errors: list[str] = []
 
     def error(self, message: str) -> None:
         self.errors.append(message)
 
     def display_path(self, path: Path) -> str:
-        for base in (self.root, self.codex_home):
+        for base in (self.root, self.codex_home, self.claude_home):
             if base is not None:
                 try:
                     return str(path.relative_to(base))
@@ -241,22 +248,22 @@ class Validator:
             if not raw_line.strip() or raw_line.lstrip().startswith("#"):
                 continue
             if "\t" in raw_line:
-                self.error(f"tabs are not valid indentation in {path.relative_to(self.root)}:{number}")
+                self.error(f"tabs are not valid indentation in {self.display_path(path)}:{number}")
                 return {}
             indent = len(raw_line) - len(raw_line.lstrip(" "))
             match = re.match(r"^\s*([A-Za-z][A-Za-z0-9_-]*):(?:\s+(.*))?$", raw_line)
             if not match:
-                self.error(f"unsupported YAML at {path.relative_to(self.root)}:{number}")
+                self.error(f"unsupported YAML at {self.display_path(path)}:{number}")
                 return {}
             while stack and indent <= stack[-1][0]:
                 stack.pop()
             if not stack:
-                self.error(f"invalid YAML indentation at {path.relative_to(self.root)}:{number}")
+                self.error(f"invalid YAML indentation at {self.display_path(path)}:{number}")
                 return {}
             parent = stack[-1][1]
             key, raw_value = match.group(1), match.group(2)
             if key in parent:
-                self.error(f"duplicate YAML key {key} at {path.relative_to(self.root)}:{number}")
+                self.error(f"duplicate YAML key {key} at {self.display_path(path)}:{number}")
                 return {}
             if raw_value is None or not raw_value.strip():
                 child: dict[str, Any] = {}
@@ -266,7 +273,7 @@ class Validator:
                 try:
                     parent[key] = self.basic_yaml_scalar(raw_value)
                 except (ValueError, json.JSONDecodeError) as exc:
-                    self.error(f"invalid YAML scalar at {path.relative_to(self.root)}:{number}: {exc}")
+                    self.error(f"invalid YAML scalar at {self.display_path(path)}:{number}: {exc}")
                     return {}
         return result
 
@@ -274,19 +281,19 @@ class Validator:
         try:
             text = path.read_text(encoding="utf-8")
         except OSError as exc:
-            self.error(f"cannot read YAML {path.relative_to(self.root)}: {exc}")
+            self.error(f"cannot read YAML {self.display_path(path)}: {exc}")
             return {}
 
         block = text
         if frontmatter:
             lines = text.splitlines()
             if not lines or lines[0] != "---":
-                self.error(f"missing YAML frontmatter: {path.relative_to(self.root)}")
+                self.error(f"missing YAML frontmatter: {self.display_path(path)}")
                 return {}
             try:
                 closing = lines.index("---", 1)
             except ValueError:
-                self.error(f"unterminated YAML frontmatter: {path.relative_to(self.root)}")
+                self.error(f"unterminated YAML frontmatter: {self.display_path(path)}")
                 return {}
             block = "\n".join(lines[1:closing])
 
@@ -295,10 +302,10 @@ class Validator:
         try:
             values = yaml.safe_load(block)
         except yaml.YAMLError as exc:
-            self.error(f"invalid YAML {path.relative_to(self.root)}: {exc}")
+            self.error(f"invalid YAML {self.display_path(path)}: {exc}")
             return {}
         if not isinstance(values, dict):
-            self.error(f"YAML root must be a mapping: {path.relative_to(self.root)}")
+            self.error(f"YAML root must be a mapping: {self.display_path(path)}")
             return {}
         return values
 
@@ -418,20 +425,25 @@ class Validator:
         self.validate_codex_agents(self.codex_home / "agents")
         self.validate_codex_policies(self.codex_home / "AGENTS.md")
 
-    def validate_claude(self) -> None:
-        settings_path = self.skill / "assets/templates/claude/settings-snippet.json"
+    def validate_claude_settings(self, path: Path, *, template: bool) -> None:
         try:
-            settings = json.loads(settings_path.read_text(encoding="utf-8"))
+            settings = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as exc:
-            self.error(f"invalid Claude settings JSON: {exc}")
-            settings = {}
-        if settings.get("model") != "opus[1m]":
-            self.error("Claude default model must be opus[1m]")
+            self.error(f"invalid Claude settings JSON {self.display_path(path)}: {exc}")
+            return
+        model = settings.get("model")
+        if template:
+            if model != "opus[1m]":
+                self.error("Claude default model must be opus[1m]")
+        elif not isinstance(model, str) or not re.search(r"opus|fable", model):
+            # An installed home may legitimately run above the opus[1m] baseline
+            # (for example an explicit Fable primary); only a weaker tier fails.
+            self.error(f"Claude primary model must be an Opus- or Fable-class model, found: {model!r}")
         if settings.get("effortLevel") != "xhigh":
             self.error("Claude default effortLevel must be xhigh")
 
+    def validate_claude_agents(self, directory: Path) -> None:
         names: set[str] = set()
-        directory = self.skill / "assets/templates/claude/agents"
         for filename, (expected_name, model, effort, expected_tools, max_turns) in CLAUDE_AGENTS.items():
             path = directory / filename
             if not self.require(path):
@@ -471,6 +483,21 @@ class Validator:
             body = path.read_text(encoding="utf-8")
             if "spawn subagents" not in body and expected_name != "fable-controller":
                 self.error(f"{filename} must prohibit descendant agents")
+
+    def validate_claude(self) -> None:
+        template = self.skill / "assets/templates/claude"
+        self.validate_claude_settings(template / "settings-snippet.json", template=True)
+        self.validate_claude_agents(template / "agents")
+
+        if self.claude_home is None:
+            return
+        if not self.claude_home.is_dir():
+            self.error("Claude home must be a directory")
+            return
+        settings_path = self.claude_home / "settings.json"
+        if self.require(settings_path):
+            self.validate_claude_settings(settings_path, template=False)
+        self.validate_claude_agents(self.claude_home / "agents")
 
     def validate_content(self) -> None:
         markdown_files = list(self.root.rglob("*.md"))
@@ -524,7 +551,7 @@ class Validator:
                     continue
                 candidate = (path.parent / clean).resolve()
                 if not candidate.exists():
-                    self.error(f"broken local link in {path.relative_to(self.root)}: {target}")
+                    self.error(f"broken local link in {self.display_path(path)}: {target}")
 
     def run(self) -> int:
         self.validate_layout()
@@ -542,6 +569,8 @@ class Validator:
         mode = "repository" if self.repository_mode else "installed skill package"
         if self.codex_home is not None:
             mode += " + explicit Codex home"
+        if self.claude_home is not None:
+            mode += " + explicit Claude home"
         print(f"Mode: {mode}")
         print(f"Codex agents: {len(CODEX_AGENTS)}")
         print(f"Claude agents: {len(CLAUDE_AGENTS)}")
@@ -556,10 +585,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--codex-home", type=Path, help="explicit Codex home to check config.toml, agents, and AGENTS.md"
     )
+    parser.add_argument(
+        "--claude-home", type=Path, help="explicit Claude home to check settings.json and agents"
+    )
     return parser.parse_args()
 
 
 if __name__ == "__main__":
     arguments = parse_args()
     installed_skill = Path(__file__).resolve().parents[1]
-    raise SystemExit(Validator(arguments.repo, installed_skill, arguments.codex_home).run())
+    raise SystemExit(Validator(arguments.repo, installed_skill, arguments.codex_home, arguments.claude_home).run())

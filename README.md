@@ -154,6 +154,8 @@ python3 -m unittest discover -s tests -v
 npx -y skills@1.5.23 add . --list
 ```
 
+加 `--codex-home ~/.codex` 或 `--claude-home ~/.claude` 可对本机已安装的活配置做同样的只读校验（检查实际生效的模型、effort、工具列表与禁令，而不只是仓库模板）。
+
 `validate.py` 只读取文件，不修改用户配置。
 
 上面的 `skills` 是 [Vercel Labs 的开源 CLI](https://github.com/vercel-labs/skills)，不是 Codex 或 Claude Code 的内建命令。本仓库锁定并验证 `1.5.23`，升级前应重新运行安装与发现测试。

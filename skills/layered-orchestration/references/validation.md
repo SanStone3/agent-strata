@@ -22,6 +22,16 @@ python3 skills/layered-orchestration/scripts/validate.py --repo . --codex-home /
 
 This is read-only and checks only `/path/to/codex-home/config.toml`, its five expected `agents/*.toml` files, and `/path/to/codex-home/AGENTS.md`. `--repo` validates the source package; `--codex-home` validates those active-client invariants without requiring whole-file equality. Without `--codex-home`, validation does not inspect a default home or claim to validate an active client.
 
+## Explicit Claude home check
+
+To inspect an active Claude Code setup:
+
+```bash
+python3 skills/layered-orchestration/scripts/validate.py --repo . --claude-home /path/to/claude-home
+```
+
+This is read-only and checks `/path/to/claude-home/settings.json` (`model`, `effortLevel`) and its seven expected `agents/*.md` files against the tier invariants: model alias, effort, tool lists, `maxTurns`, and the no-descendant prohibition. It does not parse a personalized `CLAUDE.md` rules file; keep that section aligned with `assets/templates/claude/CLAUDE-snippet.md` yourself.
+
 ## Installed configuration
 
 Check, without exposing secrets:

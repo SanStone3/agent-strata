@@ -35,11 +35,13 @@ class ValidatorMutationTests(unittest.TestCase):
     def tearDown(self) -> None:
         self.temporary.cleanup()
 
-    def validate(self, codex_home: Path | None = None) -> tuple[int, str]:
+    def validate(
+        self, codex_home: Path | None = None, claude_home: Path | None = None
+    ) -> tuple[int, str]:
         stderr = io.StringIO()
         stdout = io.StringIO()
         with contextlib.redirect_stderr(stderr), contextlib.redirect_stdout(stdout):
-            code = VALIDATE.Validator(None, self.skill, codex_home).run()
+            code = VALIDATE.Validator(None, self.skill, codex_home, claude_home).run()
         return code, stderr.getvalue() + stdout.getvalue()
 
     def replace(self, relative: str, before: str, after: str) -> None:
@@ -158,6 +160,32 @@ class ValidatorMutationTests(unittest.TestCase):
         code, output = self.validate(self.codex_home)
         self.assertEqual(1, code)
         self.assertIn("Codex primary model must be gpt-5.6-sol", output)
+
+    def test_explicit_claude_home_checks_active_configuration(self) -> None:
+        claude_home = Path(self.temporary.name) / "claude-home"
+        claude_home.mkdir()
+        template = self.skill / "assets" / "templates" / "claude"
+        shutil.copy(template / "settings-snippet.json", claude_home / "settings.json")
+        shutil.copytree(template / "agents", claude_home / "agents")
+        code, output = self.validate(claude_home=claude_home)
+        self.assertEqual(0, code, output)
+        settings = claude_home / "settings.json"
+        settings.write_text('{"model": "claude-fable-5[1m]", "effortLevel": "xhigh"}', encoding="utf-8")
+        code, output = self.validate(claude_home=claude_home)
+        self.assertEqual(0, code, output)
+        settings.write_text('{"model": "haiku", "effortLevel": "xhigh"}', encoding="utf-8")
+        code, output = self.validate(claude_home=claude_home)
+        self.assertEqual(1, code)
+        self.assertIn("Opus- or Fable-class", output)
+        shutil.copy(template / "settings-snippet.json", settings)
+        agent = claude_home / "agents" / "opus-reviewer.md"
+        agent.write_text(
+            agent.read_text(encoding="utf-8").replace("effort: xhigh", "effort: high", 1),
+            encoding="utf-8",
+        )
+        code, output = self.validate(claude_home=claude_home)
+        self.assertEqual(1, code)
+        self.assertIn("opus-reviewer.md effort must be xhigh", output)
 
     def test_fallback_toml_ignores_unrelated_tables_and_values(self) -> None:
         (self.codex_home / "config.toml").write_text(
