@@ -144,6 +144,8 @@ class ValidatorMutationTests(unittest.TestCase):
     def test_explicit_codex_home_checks_active_configuration(self) -> None:
         (self.codex_home / "AGENTS.md").write_text(
             """- Keep at most three spawned workers open; allow only one code-writing worker by default.
+- The budget limits concurrency, not total work; further packets run in later waves.
+- The budget may be raised only when every writer owns disjoint write domains with frozen shared contracts.
 - Never invoke Claude, `claude`, a Claude MCP server, or a cross-provider wrapper from Codex.
 - Workers must not commit, push, deploy, or spawn more agents.
 - When spawning a named custom role, pass a compact task packet or a limited recent-turn fork. Do not use a full-history fork with an explicit custom agent type.
@@ -159,7 +161,7 @@ class ValidatorMutationTests(unittest.TestCase):
         )
         code, output = self.validate(self.codex_home)
         self.assertEqual(1, code)
-        self.assertIn("Codex primary model must be gpt-5.6-sol", output)
+        self.assertIn("Codex primary model must be a Sol-class model", output)
 
     def test_explicit_claude_home_checks_active_configuration(self) -> None:
         claude_home = Path(self.temporary.name) / "claude-home"
@@ -171,10 +173,18 @@ class ValidatorMutationTests(unittest.TestCase):
         code, output = self.validate(claude_home=claude_home)
         self.assertEqual(0, code, output)
         settings = claude_home / "settings.json"
-        settings.write_text('{"model": "claude-fable-5[1m]", "effortLevel": "xhigh"}', encoding="utf-8")
+        settings.write_text(
+            '{"model": "claude-fable-5[1m]", "effortLevel": "xhigh",'
+            ' "env": {"CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH": "1"}}',
+            encoding="utf-8",
+        )
         code, output = self.validate(claude_home=claude_home)
         self.assertEqual(0, code, output)
-        settings.write_text('{"model": "haiku", "effortLevel": "xhigh"}', encoding="utf-8")
+        settings.write_text(
+            '{"model": "haiku", "effortLevel": "xhigh",'
+            ' "env": {"CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH": "1"}}',
+            encoding="utf-8",
+        )
         code, output = self.validate(claude_home=claude_home)
         self.assertEqual(1, code)
         self.assertIn("Opus- or Fable-class", output)
@@ -222,6 +232,99 @@ status_line = ["model-name"]
         with mock.patch.object(VALIDATE, "tomllib", None):
             code, output = self.validate(self.codex_home)
         self.assertEqual(0, code, output)
+
+
+    def test_template_concurrency_budget_must_pin_three(self) -> None:
+        self.replace(
+            "assets/templates/codex/config-snippet.toml",
+            "max_concurrent_threads_per_session = 3",
+            "max_concurrent_threads_per_session = 6",
+        )
+        code, output = self.validate()
+        self.assertEqual(1, code)
+        self.assertIn("Codex template concurrency budget must pin 3 spawned threads", output)
+
+    def test_installed_home_may_raise_the_concurrency_ceiling(self) -> None:
+        config = self.codex_home / "config.toml"
+        config.write_text(
+            config.read_text(encoding="utf-8").replace(
+                "max_concurrent_threads_per_session = 3",
+                "max_concurrent_threads_per_session = 6",
+                1,
+            ),
+            encoding="utf-8",
+        )
+        code, output = self.validate(self.codex_home)
+        self.assertEqual(0, code, output)
+        config.write_text(
+            config.read_text(encoding="utf-8").replace(
+                "max_concurrent_threads_per_session = 6",
+                "max_concurrent_threads_per_session = 0",
+                1,
+            ),
+            encoding="utf-8",
+        )
+        code, output = self.validate(self.codex_home)
+        self.assertEqual(1, code)
+        self.assertIn("max_concurrent_threads_per_session must be a positive integer", output)
+
+    def test_installed_home_may_omit_the_long_session_baseline(self) -> None:
+        config = self.codex_home / "config.toml"
+        kept = [
+            line
+            for line in config.read_text(encoding="utf-8").splitlines()
+            if not line.startswith(("model_context_window", "model_auto_compact_token_limit"))
+        ]
+        config.write_text("\n".join(kept) + "\n", encoding="utf-8")
+        code, output = self.validate(self.codex_home)
+        self.assertEqual(0, code, output)
+
+    def test_installed_compact_limit_must_stay_below_the_window(self) -> None:
+        config = self.codex_home / "config.toml"
+        config.write_text(
+            config.read_text(encoding="utf-8").replace(
+                "model_auto_compact_token_limit = 900000",
+                "model_auto_compact_token_limit = 1000000",
+                1,
+            ),
+            encoding="utf-8",
+        )
+        code, output = self.validate(self.codex_home)
+        self.assertEqual(1, code)
+        self.assertIn("auto-compact limit must stay below the context window", output)
+
+    def test_missing_scaling_reference_fails(self) -> None:
+        (self.skill / "references" / "scaling.md").unlink()
+        code, output = self.validate()
+        self.assertEqual(1, code)
+        self.assertIn("missing file: references/scaling.md", output)
+
+    def test_missing_claude_scaling_policies_fail(self) -> None:
+        self.replace(
+            "assets/templates/claude/CLAUDE-snippet.md",
+            "The budget caps concurrency, not total work",
+            "Open as many agents as convenient",
+        )
+        self.replace("assets/templates/claude/CLAUDE-snippet.md", "Raise the budget only", "Feel free to raise it")
+        self.replace("assets/templates/claude/CLAUDE-snippet.md", "disjoint write domains", "separate areas")
+        code, output = self.validate()
+        self.assertEqual(1, code)
+        for policy in (
+            "budget caps concurrency, not total work",
+            "conditions for raising the budget",
+            "disjoint write domains",
+        ):
+            self.assertIn(f"missing Claude rules policy: {policy}", output)
+
+    def test_claude_spawn_depth_must_be_one(self) -> None:
+        self.replace(
+            "assets/templates/claude/settings-snippet.json",
+            '"CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH": "1"',
+            '"CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH": "2"',
+        )
+        code, output = self.validate()
+        self.assertEqual(1, code)
+        self.assertIn("CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH must be", output)
 
 
 if __name__ == "__main__":

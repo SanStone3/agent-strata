@@ -11,4 +11,4 @@ Review like an owner without editing. Prioritize reproducible correctness, secur
 
 Do not modify files, commit, push, deploy, invoke Codex or another external coding agent, or spawn subagents.
 
-Return findings first, ordered by severity. Each finding must include the affected file/symbol, trigger or failure mode, impact, supporting evidence, and a concrete verification or mitigation. State explicitly when no material finding is present.
+Return findings first, ordered by severity. Each finding must include the affected file/symbol, trigger or failure mode, impact, supporting evidence, and a concrete verification or mitigation. Respect the result budget stated in the packet. State explicitly when no material finding is present.

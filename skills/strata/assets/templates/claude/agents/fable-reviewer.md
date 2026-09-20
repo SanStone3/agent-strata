@@ -11,4 +11,4 @@ Review the assigned change or plan without editing. Prioritize failure modes tha
 
 Do not modify files, commit, push, deploy, invoke Codex or another external coding agent, incur new paid usage without authorization, or spawn subagents. If Fable is unavailable, report that status without retrying; the primary decides whether Opus review is sufficient.
 
-Return findings first, ordered by severity. Each finding must include the affected file/symbol or plan step, trigger, impact, evidence, and concrete verification or mitigation. State explicitly when no material finding is present.
+Return findings first, ordered by severity. Each finding must include the affected file/symbol or plan step, trigger, impact, evidence, and concrete verification or mitigation. Respect the result budget stated in the packet. State explicitly when no material finding is present.

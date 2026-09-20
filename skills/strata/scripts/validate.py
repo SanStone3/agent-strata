@@ -35,6 +35,7 @@ REQUIRED_SKILL_FILES = (
     "references/codex.md",
     "references/claude.md",
     "references/task-contract.md",
+    "references/scaling.md",
     "references/validation.md",
     "assets/templates/codex/config-snippet.toml",
     "assets/templates/codex/AGENTS-snippet.md",
@@ -62,6 +63,19 @@ CODEX_CONFIG_TABLE_KEYS = {
             "default_subagent_reasoning_effort",
         }
     )
+}
+
+SHARED_SCALING_POLICIES = {
+    "budget caps concurrency, not total work": re.compile(
+        r"(?:budget caps concurrency,? not total work|budget limits concurrency,? not total work|"
+        r"caps concurrency rather than total work)",
+        re.IGNORECASE,
+    ),
+    "conditions for raising the budget": re.compile(
+        r"(?:raise the budget only|raise that budget only|budget may be raised only)",
+        re.IGNORECASE,
+    ),
+    "disjoint write domains": re.compile(r"disjoint write domains?", re.IGNORECASE),
 }
 
 CODEX_AGENTS_POLICIES = {
@@ -103,6 +117,9 @@ CLAUDE_RULES_POLICIES = {
         re.IGNORECASE,
     ),
 }
+
+CODEX_AGENTS_POLICIES.update(SHARED_SCALING_POLICIES)
+CLAUDE_RULES_POLICIES.update(SHARED_SCALING_POLICIES)
 
 READ_ONLY_TOOLS = frozenset({"Read", "Grep", "Glob"})
 WRITE_TOOLS = frozenset({"Read", "Grep", "Glob", "Edit", "Write", "Bash"})
@@ -340,7 +357,7 @@ class Validator:
         if values.get("name") != "strata":
             self.error("SKILL.md name must be strata")
         description = values.get("description", "")
-        for phrase in ("Codex", "Claude Code", "xhigh", "do not use"):
+        for phrase in ("Codex", "Claude Code", "xhigh", "concurrency budget", "do not use"):
             if phrase not in description:
                 self.error(f"SKILL.md description must discriminate on: {phrase}")
 
@@ -354,28 +371,51 @@ class Validator:
                 if not interface.get(key):
                     self.error(f"agents/openai.yaml missing interface.{key}")
 
-    def validate_codex_config(self, config_path: Path) -> None:
+    def validate_codex_config(self, config_path: Path, *, template: bool) -> None:
         config = self.load_toml(
             config_path, root_keys=CODEX_CONFIG_ROOT_KEYS, table_keys=CODEX_CONFIG_TABLE_KEYS
         )
         if config is None:
             return
-        if config.get("model") != "gpt-5.6-sol":
-            self.error("Codex primary model must be gpt-5.6-sol")
+        model = config.get("model")
+        if template:
+            if model != "gpt-5.6-sol":
+                self.error("Codex primary model must be gpt-5.6-sol")
+        elif not isinstance(model, str) or "sol" not in model:
+            # An installed home may pin a full model ID, but the primary
+            # controller still has to be the strongest available tier.
+            self.error(f"Codex primary model must be a Sol-class model, found: {model!r}")
         if config.get("model_reasoning_effort") != "xhigh":
             self.error("Codex primary effort must be xhigh")
-        if config.get("model_context_window") != 1_000_000:
-            self.error("Codex context window must be 1000000")
-        if config.get("model_auto_compact_token_limit") != 900_000:
-            self.error("Codex auto-compact limit must be 900000")
+        window = config.get("model_context_window")
+        compact = config.get("model_auto_compact_token_limit")
+        if template:
+            if window != 1_000_000:
+                self.error("Codex context window must be 1000000")
+            if compact != 900_000:
+                self.error("Codex auto-compact limit must be 900000")
+        else:
+            # The long-session baseline is applied only when the account and
+            # model support that window, so an installed home may omit it.
+            for key, value in (("model_context_window", window), ("model_auto_compact_token_limit", compact)):
+                if value is not None and (not isinstance(value, int) or value <= 0):
+                    self.error(f"Codex {key} must be a positive integer when set")
+            if isinstance(window, int) and isinstance(compact, int) and compact >= window:
+                self.error("Codex auto-compact limit must stay below the context window")
         agents_config = config.get("agents", {})
         if not isinstance(agents_config, dict):
             self.error("Codex agents config must be a table")
             return
         if agents_config.get("enabled") is not True:
             self.error("Codex agents must be enabled")
-        if agents_config.get("max_concurrent_threads_per_session") != 3:
-            self.error("Codex max concurrent subagents must be 3")
+        cap = agents_config.get("max_concurrent_threads_per_session")
+        if template:
+            if cap != 3:
+                self.error("Codex template concurrency budget must pin 3 spawned threads")
+        elif not isinstance(cap, int) or cap < 1:
+            # A raised ceiling is allowed when the user asked for it; an absent
+            # or non-positive value leaves the effective budget unknown.
+            self.error(f"Codex max_concurrent_threads_per_session must be a positive integer, found: {cap!r}")
         if agents_config.get("default_subagent_model") != "gpt-5.6-terra":
             self.error("Codex default subagent model must be gpt-5.6-terra")
         if agents_config.get("default_subagent_reasoning_effort") != "xhigh":
@@ -429,7 +469,7 @@ class Validator:
 
     def validate_codex(self) -> None:
         template = self.skill / "assets/templates/codex"
-        self.validate_codex_config(template / "config-snippet.toml")
+        self.validate_codex_config(template / "config-snippet.toml", template=True)
         self.validate_codex_agents(template / "agents")
         self.validate_codex_policies(template / "AGENTS-snippet.md")
 
@@ -440,7 +480,7 @@ class Validator:
             return
         config_path = self.codex_home / "config.toml"
         if self.require(config_path):
-            self.validate_codex_config(config_path)
+            self.validate_codex_config(config_path, template=False)
         self.validate_codex_agents(self.codex_home / "agents")
         self.validate_codex_policies(self.codex_home / "AGENTS.md")
 
@@ -460,6 +500,17 @@ class Validator:
             self.error(f"Claude primary model must be an Opus- or Fable-class model, found: {model!r}")
         if settings.get("effortLevel") != "xhigh":
             self.error("Claude default effortLevel must be xhigh")
+        env = settings.get("env")
+        if not isinstance(env, dict):
+            self.error("Claude settings must define env.CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH")
+        else:
+            depth = env.get("CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH")
+            if depth is None:
+                self.error("Claude settings must set CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH")
+            elif str(depth) != "1":
+                self.error(
+                    "CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH must be \"1\" so descendant agents are client-enforced"
+                )
 
     def validate_claude_agents(self, directory: Path) -> None:
         names: set[str] = set()

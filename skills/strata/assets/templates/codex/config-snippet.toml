@@ -9,6 +9,11 @@ model_reasoning_effort = "xhigh"
 
 [agents]
 enabled = true
+# Concurrently open spawned threads, excluding the primary. Pinned to the
+# Strata default budget instead of an unstated client default. Raise it only
+# with the scaling checklist, and verify the observed parallelism afterwards:
+# some builds resolve concurrency through a multi-agent feature table instead
+# of this key, in which case the requested value silently has no effect.
 max_concurrent_threads_per_session = 3
 default_subagent_model = "gpt-5.6-terra"
 default_subagent_reasoning_effort = "xhigh"

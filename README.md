@@ -2,19 +2,20 @@
 
 一套面向 **Codex** 与 **Claude Code** 的分层 Agent 编排方案，以名为 **`strata`** 的 skill 分发：主会话保留目标、约束和最终责任，把探索、实现、验证与审查交给不同能力层级的原生子 Agent。
 
-> 这不是“尽可能多开 Agent”的方案。它只在任务能安全拆分时并行，默认最多 3 个子 Agent、同时只有 1 个写入者，并让写代码的 Agent 使用 `xhigh` 推理强度。
+> 这不是“尽可能多开 Agent”的方案。它只在任务能安全拆分时并行：默认并发预算为 3 个活跃子 Agent、1 个写入者，写代码的 Agent 使用 `xhigh` 推理强度。**这个 3 限制的是同时在跑的数量，不是任务总量**——更多工作以波次推进，需要多个写入者时按写域划分并逐条过清单。
 
 ## 为什么需要分层
 
 长任务真正稀缺的通常不是上下文窗口本身，而是主会话里的有效注意力。搜索结果、日志、试错过程和重复代码会造成 context pollution；多个写入者同时改动又会引入冲突和责任模糊。
 
-Agent Strata 采用四条核心原则：
+Agent Strata 采用六条核心原则：
 
 1. **一个主控**：主会话拥有完整目标、权限边界、任务拆分、冲突裁决与最终交付。
 2. **按工作形态选模型**：快速模型负责查找，平衡模型负责常规实现，最强模型负责复杂实现与高风险审查。
-3. **默认一个写入者**：并行优先用于只读探索、资料核验和审查；写入任务只有路径完全不重叠时才例外。
+3. **默认一个写入者**：并行优先用于只读探索、资料核验和审查；多个写入者只在写域（可写路径清单）互不相交、共享契约已冻结、每个域都有独立验证时才成立。
 4. **结果压缩回传**：子 Agent 返回结论、证据、改动、验证和风险，不把整段日志倒回主会话。
-5. **过程可观测**：委派前列出 Agent 分工，每个子 Agent 启动、阻塞、完成时在主线程简短报告，委派过程不是黑盒。
+5. **按波次推进**：任务包总数不限，但同时活跃的数量受预算约束；波次之间有闸门，主控审完写入、跑完按域验证，再基于真实状态重写下一波。
+6. **过程可观测**：委派前列出 Agent 分工与波次计划，每个子 Agent 启动、阻塞、完成时在主线程简短报告，委派过程不是黑盒。
 
 ```mermaid
 flowchart TB
@@ -25,9 +26,10 @@ flowchart TB
     P --> S[Scout / 只读探索]
     P --> W[Worker / 单一写入者]
     P --> R[Reviewer / 只读审查]
-    S --> C
-    W --> C
-    R --> C
+    S --> G[波次闸门: 审写入 + 按域验证]
+    W --> G
+    R --> G
+    G --> C
     C --> V[整合、验证、交付]
 ```
 
@@ -45,6 +47,27 @@ flowchart TB
 推荐基线不是绝对真理。模型可用性、套餐、组织策略和 CLI 版本不同，安装时应先核验当前环境，再合并配置。
 
 Claude 的 `sonnet` / `opus` alias 在部分第三方 provider 上可能解析到不支持 `xhigh` 的旧模型，客户端会降到可用的较低档。安装完成的硬性验收是检查**实际解析后的模型和 effort**；不满足时应 pin 组织批准且支持 `xhigh` 的完整模型 ID，或明确报告该约束未满足。
+
+## 并发预算：3 不是天花板
+
+“最多 3 个”是**默认并发预算**，和客户端的机制上限、以及任务的总工作量是三件不同的事：
+
+| 数量 | 含义 | 默认 |
+|---|---|---|
+| 客户端上限 | 客户端机制强制的天花板 | Codex：3 个子线程（含主线程共 4，`agents.max_concurrent_threads_per_session`）；Claude Code：20 个并发子 Agent（`CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS`，最高 effort 会话不强制） |
+| 并发预算 | 主控选择同时保持活跃的数量 | 3 个活跃、1 个写入者 |
+| 写域 | 校验过互不相交的可写路径集合 | 1 个 |
+| 任务包总数 | 整个任务委派出去的包总数 | 不限 |
+
+```text
+并发预算 = min(客户端上限, 写入者 + 读取者)
+```
+
+12 个任务包是常态：跑 4 个波次，而不是开 12 条线程。真正卡住并行度的从来不是那个数字，而是**写域能不能切干净**和**主控能不能审完**。确实需要更多同时动工的 Agent 时，必须整条清单成立：全只读扇出，或每个写入者持有显式路径清单校验过的独立写域；共享契约（接口、schema、lockfile、生成物）已由主控先落地并冻结；每个域有独立验证命令；每个包在结果预算内返回；主控有余力在下一波前审完每一处写入；多出来的开销已获授权。任何一条不成立，正确答案是串行，而不是调高数字。
+
+调高客户端上限后要验证**实际并行度**而不是配置值：部分 Codex 版本由 multi-agent 第二代特性接管并发，旧键会被静默忽略。Claude Code 侧模板则把 `CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH` 设为 `1`，让“子 Agent 不再派生孙 Agent”从纸面约束变成客户端机制约束。
+
+详见 [`skills/strata/references/scaling.md`](skills/strata/references/scaling.md)（AI 运行时读的那份）与 [编排模式与示例](docs/orchestration.md#3-并发预算写域与波次)。
 
 ## 快速安装
 
@@ -135,7 +158,7 @@ claude --agent fable-controller
 ```text
 skills/strata/
 ├── SKILL.md                 # AI 的入口与路由规则
-├── references/              # 安装、双端配置、任务契约和校验说明
+├── references/              # 安装、双端配置、任务契约、并发扩容和校验说明
 ├── assets/templates/        # 可合并的 Codex / Claude 模板
 └── scripts/validate.py      # 只读结构校验
 docs/
@@ -155,7 +178,7 @@ python3 -m unittest discover -s tests -v
 npx -y skills@1.5.23 add . --list
 ```
 
-加 `--codex-home ~/.codex` 或 `--claude-home ~/.claude` 可对本机已安装的活配置做同样的只读校验（检查实际生效的模型、effort、工具列表与禁令，而不只是仓库模板）。
+加 `--codex-home ~/.codex` 或 `--claude-home ~/.claude` 可对本机已安装的活配置做同样的只读校验（检查实际生效的模型、effort、工具列表、并发上限、`CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH` 与核心禁令，而不只是仓库模板）。模板要求严格（并发预算固定为 3、1M context 基线），已安装的活配置则允许用户按需调高上限或省略不被账号支持的长会话基线。
 
 `validate.py` 只读取文件，不修改用户配置。
 
@@ -163,15 +186,17 @@ npx -y skills@1.5.23 add . --list
 
 ## 版本与依据
 
-本方案于 **2026-08-20** 对照以下官方文档核验：
+本方案于 **2026-08-20** 对照官方文档核验，并于 **2026-09-20** 重新核验并发与嵌套相关事实（Codex 默认 4 线程含主线程、Claude Code 默认 20 并发与 3 层嵌套、两端相关配置键）：
 
 - [OpenAI：Codex Subagents](https://developers.openai.com/codex/subagents)
 - [OpenAI：Codex Skills](https://developers.openai.com/codex/skills)
 - [OpenAI：Codex Config Basics](https://developers.openai.com/codex/config-basic)
+- [OpenAI：Codex Sample Configuration](https://developers.openai.com/codex/config-sample)
 - [OpenAI：AGENTS.md](https://developers.openai.com/codex/guides/agents-md)
 - [OpenAI：GPT-5.6 Model Guidance](https://developers.openai.com/api/docs/guides/latest-model)
 - [Anthropic：Claude Code Skills](https://code.claude.com/docs/en/skills)
 - [Anthropic：Claude Code Subagents](https://code.claude.com/docs/en/sub-agents)
+- [Anthropic：Claude Code Environment Variables](https://code.claude.com/docs/en/env-vars)
 - [Anthropic：Model Configuration](https://code.claude.com/docs/en/model-config)
 - [Anthropic：Claude Code Settings](https://code.claude.com/docs/en/settings)
 
