@@ -35,11 +35,11 @@
 ### 2. 按任务形态选层级
 
 ```text
-只读查找、枚举、定位              -> Luna / Haiku Scout
-完全明确的机械变换或命令           -> Luna Executor（Codex）
-边界清楚的普通实现与测试修复        -> Terra / Sonnet Worker，xhigh
-跨模块、接口、并发、安全、生命周期   -> Sol / Opus Worker，xhigh
-高风险最终审查                     -> Sol / Opus Reviewer，xhigh
+只读查找、枚举、定位              -> scout / Haiku Scout
+完全明确的机械变换或命令           -> executor（Codex）
+边界清楚的普通实现与测试修复        -> worker / Sonnet Worker，xhigh
+跨模块、接口、并发、安全、生命周期   -> deep_worker / Opus Worker，xhigh
+高风险最终审查                     -> reviewer / Opus Reviewer，xhigh
 多阶段、超长、代价极高的 Claude 任务 -> Fable，显式启用且 xhigh
 ```
 
@@ -246,12 +246,12 @@ flowchart TB
 
 ## Codex 路由
 
-- 主会话通常为 Sol `xhigh`，保留完整任务状态。
-- `luna_scout`：读代码、查配置、定位测试，不修改。
-- `luna_executor`：只执行完全指定的机械步骤；遇到语义判断就停止。
-- `terra_worker`：常规实现，`xhigh`；触及安全/并发/公共接口时升级。
-- `sol_worker`：复杂实现，`xhigh`。
-- `sol_reviewer`：复杂或高风险改动后的只读审查，`xhigh`。
+- 主会话保留用户选择的模型与 effort，以及完整任务状态。Codex 子代理在首次委派前按 [模型路由流程](../skills/strata/references/model-routing.md) 解析，命名角色不再绑定固定型号。
+- `scout`：读代码、查配置、定位测试，不修改。
+- `executor`：只执行完全指定的机械步骤；遇到语义判断就停止。
+- `worker`：常规实现，`xhigh`；触及安全/并发/公共接口时升级。
+- `deep_worker`：复杂实现，`xhigh`。
+- `reviewer`：复杂或高风险改动后的只读审查，`xhigh`。
 
 Codex 当前本地客户端会在用户直接要求，或适用的 `AGENTS.md` / skill 明确要求时委派。安装本 skill 和规则片段后，用户可以正常描述任务，由主会话按规则判断。
 

@@ -1,6 +1,6 @@
-name = "luna_executor"
+# Model is supplied by the session binding or rendered installation.
+name = "executor"
 description = "Executes exact commands or mechanical transformations when the scope and expected result are already fully specified."
-model = "gpt-5.6-luna"
 model_reasoning_effort = "medium"
 sandbox_mode = "workspace-write"
 developer_instructions = """

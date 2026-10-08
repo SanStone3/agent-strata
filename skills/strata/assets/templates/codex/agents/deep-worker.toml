@@ -1,6 +1,6 @@
-name = "sol_worker"
+# Model is supplied by the session binding or rendered installation.
+name = "deep_worker"
 description = "High-capability implementation worker for cross-module, ambiguous, security-sensitive, concurrency-sensitive, lifecycle-sensitive, migration-sensitive, or expensive-to-rework changes."
-model = "gpt-5.6-sol"
 model_reasoning_effort = "xhigh"
 sandbox_mode = "workspace-write"
 developer_instructions = """

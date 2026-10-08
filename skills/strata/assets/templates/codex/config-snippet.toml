@@ -1,11 +1,8 @@
 # Merge these keys into ~/.codex/config.toml for global scope or
 # <repo>/.codex/config.toml for project scope. Do not replace the whole file.
 
-# Opinionated quality-first primary-session baseline.
-model = "gpt-5.6-sol"
-model_context_window = 1000000
-model_auto_compact_token_limit = 900000
-model_reasoning_effort = "xhigh"
+# Preserve the user-selected primary model, effort, and context settings.
+# Resolve subagent models before dispatch or render an installation snapshot.
 
 [agents]
 enabled = true
@@ -15,6 +12,5 @@ enabled = true
 # some builds resolve concurrency through a multi-agent feature table instead
 # of this key, in which case the requested value silently has no effect.
 max_concurrent_threads_per_session = 3
-default_subagent_model = "gpt-5.6-terra"
 default_subagent_reasoning_effort = "xhigh"
 interrupt_message = true

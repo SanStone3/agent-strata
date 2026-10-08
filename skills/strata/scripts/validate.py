@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
 import re
 import sys
@@ -21,6 +22,12 @@ except ModuleNotFoundError:  # pragma: no cover - optional for installed-skill c
     yaml = None  # type: ignore[assignment]
 
 
+_ROUTING_SPEC = importlib.util.spec_from_file_location("strata_routing", Path(__file__).with_name("resolve_models.py"))
+assert _ROUTING_SPEC is not None and _ROUTING_SPEC.loader is not None
+ROUTING = importlib.util.module_from_spec(_ROUTING_SPEC)
+_ROUTING_SPEC.loader.exec_module(ROUTING)
+
+
 REQUIRED_ROOT_FILES = (
     "README.md",
     "LICENSE",
@@ -33,6 +40,9 @@ REQUIRED_SKILL_FILES = (
     "agents/openai.yaml",
     "references/install.md",
     "references/codex.md",
+    "references/model-routing.md",
+    "assets/model-policy.json",
+    "scripts/resolve_models.py",
     "references/claude.md",
     "references/task-contract.md",
     "references/scaling.md",
@@ -44,12 +54,10 @@ REQUIRED_SKILL_FILES = (
 )
 
 CODEX_AGENTS = {
-    "luna-scout.toml": ("luna_scout", "gpt-5.6-luna", "medium", "read-only"),
-    "luna-executor.toml": ("luna_executor", "gpt-5.6-luna", "medium", "workspace-write"),
-    "terra-worker.toml": ("terra_worker", "gpt-5.6-terra", "xhigh", "workspace-write"),
-    "sol-worker.toml": ("sol_worker", "gpt-5.6-sol", "xhigh", "workspace-write"),
-    "sol-reviewer.toml": ("sol_reviewer", "gpt-5.6-sol", "xhigh", "read-only"),
+    role.replace("_", "-") + ".toml": (role, effort, sandbox)
+    for role, (_, effort, sandbox) in ROUTING.ROLES.items()
 }
+LEGACY_CODEX_AGENTS = {role: alias for alias, role in ROUTING.ALIASES.items()}
 
 CODEX_CONFIG_ROOT_KEYS = frozenset(
     {"model", "model_context_window", "model_auto_compact_token_limit", "model_reasoning_effort"}
@@ -142,6 +150,9 @@ class Validator:
         skill: Path,
         codex_home: Path | None = None,
         claude_home: Path | None = None,
+        bindings: Path | None = None,
+        model_policy: Path | None = None,
+        codex_rules: Path | None = None,
     ) -> None:
         self.repository_mode = repo is not None
         self.root = repo.resolve() if repo is not None else skill.resolve()
@@ -149,6 +160,11 @@ class Validator:
         self.codex_home = codex_home.resolve() if codex_home is not None else None
         self.claude_home = claude_home.resolve() if claude_home is not None else None
         self.errors: list[str] = []
+        self.warnings: list[str] = []
+        self.bindings_path = bindings
+        self.model_policy = model_policy or self.skill / "assets/model-policy.json"
+        self.codex_rules = codex_rules
+        self.bindings: dict[str, Any] | None = None
 
     def error(self, message: str) -> None:
         self.errors.append(message)
@@ -379,29 +395,17 @@ class Validator:
             return
         model = config.get("model")
         if template:
-            if model != "gpt-5.6-sol":
-                self.error("Codex primary model must be gpt-5.6-sol")
-        elif not isinstance(model, str) or "sol" not in model:
-            # An installed home may pin a full model ID, but the primary
-            # controller still has to be the strongest available tier.
-            self.error(f"Codex primary model must be a Sol-class model, found: {model!r}")
-        if config.get("model_reasoning_effort") != "xhigh":
-            self.error("Codex primary effort must be xhigh")
+            if any(key in config for key in CODEX_CONFIG_ROOT_KEYS):
+                self.error("Codex template must preserve primary model, effort and context settings")
+        elif model is not None and (not isinstance(model, str) or not model.strip()):
+            self.error("Codex primary model must be a nonempty string when set")
         window = config.get("model_context_window")
         compact = config.get("model_auto_compact_token_limit")
-        if template:
-            if window != 1_000_000:
-                self.error("Codex context window must be 1000000")
-            if compact != 900_000:
-                self.error("Codex auto-compact limit must be 900000")
-        else:
-            # The long-session baseline is applied only when the account and
-            # model support that window, so an installed home may omit it.
-            for key, value in (("model_context_window", window), ("model_auto_compact_token_limit", compact)):
-                if value is not None and (not isinstance(value, int) or value <= 0):
-                    self.error(f"Codex {key} must be a positive integer when set")
-            if isinstance(window, int) and isinstance(compact, int) and compact >= window:
-                self.error("Codex auto-compact limit must stay below the context window")
+        for key, value in (("model_context_window", window), ("model_auto_compact_token_limit", compact)):
+            if value is not None and (type(value) is not int or value <= 0):
+                self.error(f"Codex {key} must be a positive integer when set")
+        if type(window) is int and type(compact) is int and compact >= window:
+            self.error("Codex auto-compact limit must stay below the context window")
         agents_config = config.get("agents", {})
         if not isinstance(agents_config, dict):
             self.error("Codex agents config must be a table")
@@ -412,19 +416,32 @@ class Validator:
         if template:
             if cap != 3:
                 self.error("Codex template concurrency budget must pin 3 spawned threads")
-        elif not isinstance(cap, int) or cap < 1:
+        elif type(cap) is not int or cap < 1:
             # A raised ceiling is allowed when the user asked for it; an absent
             # or non-positive value leaves the effective budget unknown.
             self.error(f"Codex max_concurrent_threads_per_session must be a positive integer, found: {cap!r}")
-        if agents_config.get("default_subagent_model") != "gpt-5.6-terra":
-            self.error("Codex default subagent model must be gpt-5.6-terra")
+        default_model = agents_config.get("default_subagent_model")
+        if template and default_model is not None:
+            self.error("Codex template must resolve the default subagent model dynamically")
+        elif default_model is not None:
+            if not isinstance(default_model, str) or not default_model.strip():
+                self.error("Codex default subagent model must be a nonempty string")
+            elif self.bindings and default_model != self.bindings["worker"]["model"]:
+                self.error("Codex default subagent model differs from the worker binding")
         if agents_config.get("default_subagent_reasoning_effort") != "xhigh":
             self.error("Codex default subagent effort must be xhigh")
 
-    def validate_codex_agents(self, directory: Path) -> None:
+    def validate_codex_agents(self, directory: Path, *, template: bool = True) -> None:
         names: set[str] = set()
-        for filename, (expected_name, model, effort, sandbox) in CODEX_AGENTS.items():
+        for filename, (role, effort, sandbox) in CODEX_AGENTS.items():
+            expected_name = role
             path = directory / filename
+            if not template and not path.exists():
+                alias = LEGACY_CODEX_AGENTS[role]
+                legacy = directory / (alias.replace("_", "-") + ".toml")
+                if legacy.exists():
+                    path, filename, expected_name = legacy, legacy.name, alias
+                    self.warnings.append(f"Legacy role {alias} maps to {role}; migrate its definition and references together")
             if not self.require(path):
                 continue
             values = self.load_toml(path)
@@ -440,8 +457,14 @@ class Validator:
                 if actual_name in names:
                     self.error(f"duplicate Codex agent name: {actual_name}")
                 names.add(actual_name)
-            if values.get("model") != model:
-                self.error(f"{filename} model must be {model}")
+            model = values.get("model")
+            if template:
+                if model is not None:
+                    self.error(f"{filename} template must not hard-code a model")
+            elif not isinstance(model, str) or not model.strip():
+                self.error(f"{filename} installed agent needs a resolved model")
+            elif self.bindings and model != self.bindings[role]["model"]:
+                self.error(f"{filename} model differs from the {role} binding")
             if values.get("model_reasoning_effort") != effort:
                 self.error(f"{filename} effort must be {effort}")
             if values.get("sandbox_mode") != sandbox:
@@ -468,6 +491,16 @@ class Validator:
         self.validate_policies(path, CODEX_AGENTS_POLICIES, "Codex AGENTS")
 
     def validate_codex(self) -> None:
+        try:
+            policy = ROUTING.read_json(self.model_policy)
+            ROUTING.validate_policy(policy)
+            if self.bindings_path:
+                result = ROUTING.verify_binding(ROUTING.read_json(self.bindings_path), policy)
+                if result["unresolved"]:
+                    raise ROUTING.RoutingError("Installed configuration requires all five role bindings")
+                self.bindings = result["bindings"]
+        except (ROUTING.RoutingError, TypeError, KeyError) as exc:
+            self.error(f"Model routing validation failed: {exc}")
         template = self.skill / "assets/templates/codex"
         self.validate_codex_config(template / "config-snippet.toml", template=True)
         self.validate_codex_agents(template / "agents")
@@ -481,8 +514,10 @@ class Validator:
         config_path = self.codex_home / "config.toml"
         if self.require(config_path):
             self.validate_codex_config(config_path, template=False)
-        self.validate_codex_agents(self.codex_home / "agents")
-        self.validate_codex_policies(self.codex_home / "AGENTS.md")
+        if not self.bindings_path:
+            self.warnings.append("Codex model availability and tier compatibility are unverified; pass a fresh --bindings snapshot")
+        self.validate_codex_agents(self.codex_home / "agents", template=False)
+        self.validate_codex_policies(self.codex_rules or self.codex_home / "AGENTS.md")
 
     def validate_claude_settings(self, path: Path, *, template: bool) -> None:
         try:
@@ -636,7 +671,9 @@ class Validator:
             for error in self.errors:
                 print(f"- {error}", file=sys.stderr)
             return 1
-        print("Agent Strata validation passed")
+        for warning in self.warnings:
+            print(f"Warning: {warning}")
+        print("Agent Strata validation passed (structure; inference access not tested)")
         print(f"Target: {self.root}")
         mode = "repository" if self.repository_mode else "installed skill package"
         if self.codex_home is not None:
@@ -660,10 +697,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--claude-home", type=Path, help="explicit Claude home to check settings.json and agents"
     )
+    parser.add_argument("--bindings", type=Path, help="fresh model-bindings.json from resolve_models.py")
+    parser.add_argument("--model-policy", type=Path, help="policy used to resolve the supplied binding")
+    parser.add_argument("--codex-rules", type=Path, help="project-root AGENTS.md when Codex home is project/.codex")
     return parser.parse_args()
 
 
 if __name__ == "__main__":
     arguments = parse_args()
     installed_skill = Path(__file__).resolve().parents[1]
-    raise SystemExit(Validator(arguments.repo, installed_skill, arguments.codex_home, arguments.claude_home).run())
+    raise SystemExit(Validator(arguments.repo, installed_skill, arguments.codex_home, arguments.claude_home, arguments.bindings, arguments.model_policy, arguments.codex_rules).run())

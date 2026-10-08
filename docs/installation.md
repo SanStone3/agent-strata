@@ -6,7 +6,7 @@
 
 - 已安装并登录 Codex 或 Claude Code。
 - Node.js 环境能运行 `npx skills`；也可以完全手工安装。
-- 使用模板中的模型前，账号与组织策略允许访问对应模型。
+- Codex 路由脚本需要 Python 3.10+，使用当前调用工具目录或匹配的 CLI `model/list`；账号与组织策略应允许所选模型。
 - 修改全局配置会影响本机当前用户的所有项目；修改项目配置应由仓库维护者确认并提交。
 
 ## 推荐：让 AI 安装
@@ -35,9 +35,9 @@ npx -y skills@1.5.23 add SanStone3/agent-strata \
 ```text
 使用 strata skill，把 Agent Strata 配置安装到 Codex，全局生效。
 检查现有 ~/.codex/config.toml、~/.codex/agents 和全局 AGENTS.md；
-先备份，再按 skill 中的 Codex 模板增量合并。不要删除或覆盖现有项目、MCP、hooks、权限和其他模型配置。
+先备份，再读取当前目录、保留用户固定型号，按 skill 的模型路由流程生成绑定并增量合并。不要删除或覆盖现有项目、MCP、hooks、权限和其他模型配置。
 写代码的 Worker 必须使用 xhigh；保持默认并发预算（3 个子线程、1 个写入者），并核验实际生效的并行度。
-完成后运行只读校验并显示实际变更。
+完成后带 --bindings 运行只读校验并显示实际变更。保留主模型、effort 和上下文配置。
 ```
 
 在 Claude Code 中：
@@ -78,13 +78,13 @@ AI 或人工安装都必须遵守：
 | 内容 | 源模板 | 目标 |
 |---|---|---|
 | Skill | `skills/strata/` | `~/.agents/skills/strata/` |
-| 主配置片段 | `codex/config-snippet.toml` | 合并到 `~/.codex/config.toml` |
-| Agent 定义 | `codex/agents/*.toml` | `~/.codex/agents/` |
+| 主配置片段 | 解析器生成的 `config-snippet.toml` | 合并到 `~/.codex/config.toml` |
+| Agent 定义 | 解析器生成的 `agents/*.toml` | `~/.codex/agents/` |
 | 编排规则 | `codex/AGENTS-snippet.md` | 合并到 `~/.codex/AGENTS.md` |
 
 Codex 官方当前将个人 skill 位置定义为 `~/.agents/skills/`，项目位置为 `.agents/skills/`。一些既有安装器或旧环境仍可能显示 `~/.codex/skills/`；优先使用当前客户端和 `npx skills list -g --json` 实际报告的位置。
 
-Codex 新建 Agent 目录后，重新启动会话以确保发现全部定义。
+Codex 安装前按 [模型路由流程](../skills/strata/references/model-routing.md) 运行解析器并生成暂存目录；不要直接复制未绑定模型的源码模板。合并时保留主模型设置和既有用户定制，连同路由引用一起迁移旧角色名。新建 Agent 目录后，重新启动会话以确保发现全部定义。
 
 ### Codex 项目级
 
@@ -123,8 +123,8 @@ Claude Code 会监视已存在的 skill 和 Agent 目录。若会话启动时目
 
 ### 推荐基线
 
-- Codex 主会话：`gpt-5.6-sol`，`xhigh`，1M context，900k auto compact。
-- Codex 默认子 Agent：`gpt-5.6-terra`，`xhigh`；Scout 显式覆盖为 Luna `medium`。
+- Codex 主会话：保留用户现有模型、effort、context 与 auto compact 设置。
+- Codex 默认子 Agent：当前目录解析出的 `worker` 模型，`xhigh`；Scout / Executor 为效率层 `medium`，复杂实现与审查为深度层 `xhigh`。
 - Claude 默认主会话：`opus[1m]`，`xhigh`。
 - Claude 常规实现：Sonnet `xhigh`；复杂实现/审查：Opus `xhigh`。
 - Claude Fable：只作为显式 controller / worker / reviewer 使用。
@@ -139,7 +139,7 @@ Claude Code 会监视已存在的 skill 和 Agent 目录。若会话启动时目
 - 已有更具体、经过评测的模型路由。
 - 团队工作流确实需要更宽的并行写入，此时应先按 `references/scaling.md` 的写域清单评估，再决定调高上限，并记录实际生效值。
 
-此时应保留用户现状，只安装角色与编排规则，或把模板模型替换为组织批准的等价层级。
+此时应保留用户现状。Codex 使用用户 pins 或组织批准的路由策略重新解析；未满足的角色保持不可委派，不安装会继承未知模型的空模板。Claude 独立使用其原生配置。
 
 ## 验证与卸载
 
@@ -153,7 +153,8 @@ npx -y skills@1.5.23 list -g --json
 验证本机已安装的活配置（模型、effort、工具列表、并发上限、嵌套深度、核心政策）：
 
 ```bash
-python3 skills/strata/scripts/validate.py --repo . --codex-home ~/.codex
+python3 skills/strata/scripts/validate.py --repo . --codex-home ~/.codex \
+  --bindings /path/to/model-bindings.json
 python3 skills/strata/scripts/validate.py --repo . --claude-home ~/.claude
 ```
 

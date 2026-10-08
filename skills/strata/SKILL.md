@@ -1,6 +1,6 @@
 ---
 name: strata
-description: Configure or run capability-tiered native subagent workflows for complex Codex or Claude Code tasks, with one controller, one writer by default, xhigh coding workers, an explicit concurrency budget with wave scheduling when more agents are genuinely needed, bounded task packets, and provider isolation. Use for multi-part work, noisy independent exploration, parallel write planning, high-risk review, or global/project installation of this orchestration pattern; do not use for small sequential or same-file tasks.
+description: Configure or run capability-tiered native subagent workflows with adaptive Codex model bindings for complex Codex or Claude Code tasks, with one controller, one writer by default, xhigh coding workers, an explicit concurrency budget with wave scheduling when more agents are genuinely needed, bounded task packets, and provider isolation. Use for multi-part work, noisy independent exploration, parallel write planning, high-risk review, or global/project installation of this orchestration pattern; do not use for small sequential or same-file tasks.
 ---
 
 # Strata
@@ -10,7 +10,8 @@ Keep one primary controller responsible for the complete objective, authorizatio
 ## Select the mode
 
 - For installation or configuration, read [references/install.md](references/install.md), then read only the provider reference requested: [references/codex.md](references/codex.md) or [references/claude.md](references/claude.md).
-- For live task orchestration, read [references/task-contract.md](references/task-contract.md).
+- For live task orchestration, read [references/task-contract.md](references/task-contract.md). For Codex, also read [references/model-routing.md](references/model-routing.md) before the first delegation.
+- For Codex model discovery, upgrades, pins, binding generation or unavailable-model recovery, read [references/model-routing.md](references/model-routing.md).
 - When one writer or three active agents are not enough, when a parallel wave must be planned, or when a client refuses a spawn, read [references/scaling.md](references/scaling.md).
 - For an audit, upgrade, troubleshooting, or handoff, read [references/validation.md](references/validation.md).
 
@@ -31,13 +32,15 @@ When both providers are requested, configure them as two independent clients. Ne
 
 ## Route live work
 
+For Codex, resolve the stable roles against the current native tool catalog using `scripts/resolve_models.py`; use its selected model and effort explicitly, or a verified rendered installation when overrides are unavailable. Preserve the user-selected primary model and role pins. Never dispatch model-free templates as if they were bound agents.
+
 Before delegating, classify the work:
 
-- Fast read-only discovery -> `luna_scout` / `haiku-scout`.
-- Exact mechanical operation -> `luna_executor` when using Codex; otherwise handle directly or use a tightly bounded worker.
-- Ordinary bounded implementation -> `terra_worker` / `sonnet-worker` at `xhigh`.
-- Cross-module, ambiguous, security-sensitive, concurrency-sensitive, lifecycle-sensitive, migration-sensitive, or expensive-to-rework implementation -> `sol_worker` / `opus-worker` at `xhigh`.
-- Consequential final review -> `sol_reviewer` / `opus-reviewer` at `xhigh`.
+- Fast read-only discovery -> `scout` / `haiku-scout`.
+- Exact mechanical operation -> `executor` when using Codex; otherwise handle directly or use a tightly bounded worker.
+- Ordinary bounded implementation -> `worker` / `sonnet-worker` at `xhigh`.
+- Cross-module, ambiguous, security-sensitive, concurrency-sensitive, lifecycle-sensitive, migration-sensitive, or expensive-to-rework implementation -> `deep_worker` / `opus-worker` at `xhigh`.
+- Consequential final review -> `reviewer` / `opus-reviewer` at `xhigh`.
 - Exceptionally long, high-consequence Claude work -> `fable-worker`, with `fable-reviewer` for the final read-only pass, only when Fable is explicitly selected and availability or approved usage credits are confirmed. An explicit Fable main session starts as `claude --agent fable-controller`.
 
 Do not delegate merely because a specialized agent exists. Continue locally when the task is small or when each step depends on the previous result.
@@ -62,7 +65,7 @@ Treat installation as a merge, not a copy operation:
 2. If scope is unspecified, infer global only from language such as “all projects” or “this computer”; otherwise use project scope when operating for one repository. Ask only when the choice remains materially ambiguous.
 3. Back up each existing file before changing it.
 4. Merge only the relevant keys and append a clearly delimited rules section. Preserve unrelated models, permissions, MCP servers, plugins, hooks, trust entries, and user customizations.
-5. Install or update the provider-native agent files from `assets/templates/` after checking same-name conflicts.
+5. For Codex, resolve and render a fresh binding first, then merge those generated definitions after checking same-name conflicts; source templates deliberately omit models. For Claude, use its independent native templates. Preserve primary model/context choices and migrate legacy role names with their references.
 6. Do not lower sandbox or permission controls, add credentials, or enable cross-provider execution.
 7. Parse the resulting formats, run `scripts/validate.py` against the source or installed layout when possible, and confirm the client's actually resolved model, effort, and effective concurrency cap. If an alias resolves to a model that cannot run `xhigh`, pin an organization-approved compatible full ID or report that the coding-worker invariant remains unmet.
 8. Report exact changes, effective rather than merely requested model/effort, the effective concurrency cap, and restart requirements.

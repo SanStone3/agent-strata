@@ -3,6 +3,7 @@ from __future__ import annotations
 import contextlib
 import importlib.util
 import io
+import json
 import shutil
 import tempfile
 import unittest
@@ -28,20 +29,27 @@ class ValidatorMutationTests(unittest.TestCase):
         self.codex_home = Path(self.temporary.name) / "codex-home"
         self.codex_home.mkdir()
         template = self.skill / "assets" / "templates" / "codex"
-        shutil.copy(template / "config-snippet.toml", self.codex_home / "config.toml")
-        shutil.copytree(template / "agents", self.codex_home / "agents")
-        shutil.copy(template / "AGENTS-snippet.md", self.codex_home / "AGENTS.md")
+        policy = VALIDATE.ROUTING.read_json(self.skill / "assets/model-policy.json")
+        catalog = {"models": [{"model": name, "efforts": ["medium", "xhigh"]}
+                              for name in ("gpt-6-luna", "gpt-6.1-sol", "gpt-6-astra")]}
+        self.binding = VALIDATE.ROUTING.resolve(catalog, policy)
+        staging = Path(self.temporary.name) / "rendered"
+        VALIDATE.ROUTING.render(self.binding, staging, self.skill)
+        shutil.copy(staging / "config-snippet.toml", self.codex_home / "config.toml")
+        shutil.copytree(staging / "agents", self.codex_home / "agents")
+        shutil.copy(staging / "AGENTS-snippet.md", self.codex_home / "AGENTS.md")
+        self.bindings_path = staging / "model-bindings.json"
 
     def tearDown(self) -> None:
         self.temporary.cleanup()
 
     def validate(
-        self, codex_home: Path | None = None, claude_home: Path | None = None
+        self, codex_home: Path | None = None, claude_home: Path | None = None, bindings: Path | None = None
     ) -> tuple[int, str]:
         stderr = io.StringIO()
         stdout = io.StringIO()
         with contextlib.redirect_stderr(stderr), contextlib.redirect_stdout(stdout):
-            code = VALIDATE.Validator(None, self.skill, codex_home, claude_home).run()
+            code = VALIDATE.Validator(None, self.skill, codex_home, claude_home, bindings).run()
         return code, stderr.getvalue() + stdout.getvalue()
 
     def replace(self, relative: str, before: str, after: str) -> None:
@@ -54,23 +62,19 @@ class ValidatorMutationTests(unittest.TestCase):
         code, output = self.validate()
         self.assertEqual(0, code, output)
 
-    def test_wrong_codex_model_fails(self) -> None:
-        self.replace("assets/templates/codex/agents/sol-reviewer.toml", 'model = "gpt-5.6-sol"', 'model = "gpt-5.6-luna"')
+    def test_hardcoded_codex_template_model_fails(self) -> None:
+        self.replace("assets/templates/codex/agents/reviewer.toml", 'name = "reviewer"', 'name = "reviewer"\nmodel = "gpt-6-astra"')
         code, output = self.validate()
         self.assertEqual(1, code)
-        self.assertIn("sol-reviewer.toml model must be gpt-5.6-sol", output)
+        self.assertIn("reviewer.toml template must not hard-code a model", output)
 
     def test_wrong_codex_agent_defaults_fail(self) -> None:
         self.replace("assets/templates/codex/config-snippet.toml", "enabled = true", "enabled = false")
-        self.replace(
-            "assets/templates/codex/config-snippet.toml",
-            'default_subagent_model = "gpt-5.6-terra"',
-            'default_subagent_model = "gpt-5.6-luna"',
-        )
+        self.replace("assets/templates/codex/config-snippet.toml", "[agents]", '[agents]\ndefault_subagent_model = "gpt-6-luna"')
         code, output = self.validate()
         self.assertEqual(1, code)
         self.assertIn("Codex agents must be enabled", output)
-        self.assertIn("Codex default subagent model must be gpt-5.6-terra", output)
+        self.assertIn("resolve the default subagent model dynamically", output)
 
     def test_wrong_claude_model_fails(self) -> None:
         self.replace("assets/templates/claude/agents/opus-worker.md", "model: opus", "model: haiku")
@@ -155,13 +159,14 @@ class ValidatorMutationTests(unittest.TestCase):
         code, output = self.validate(self.codex_home)
         self.assertEqual(0, code, output)
         config = self.codex_home / "config.toml"
-        config.write_text(
-            config.read_text(encoding="utf-8").replace('model = "gpt-5.6-sol"', 'model = "gpt-5.6-luna"', 1),
-            encoding="utf-8",
-        )
-        code, output = self.validate(self.codex_home)
+        config.write_text('model = "user-selected-model"\nmodel_reasoning_effort = "high"\n' + config.read_text(), encoding="utf-8")
+        code, output = self.validate(self.codex_home, bindings=self.bindings_path)
+        self.assertEqual(0, code, output)
+        agent = self.codex_home / "agents/reviewer.toml"
+        agent.write_text(agent.read_text().replace("gpt-6-astra", "gpt-6-luna"))
+        code, output = self.validate(self.codex_home, bindings=self.bindings_path)
         self.assertEqual(1, code)
-        self.assertIn("Codex primary model must be a Sol-class model", output)
+        self.assertIn("reviewer.toml model differs from the reviewer binding", output)
 
     def test_explicit_claude_home_checks_active_configuration(self) -> None:
         claude_home = Path(self.temporary.name) / "claude-home"
@@ -281,17 +286,67 @@ status_line = ["model-name"]
 
     def test_installed_compact_limit_must_stay_below_the_window(self) -> None:
         config = self.codex_home / "config.toml"
-        config.write_text(
-            config.read_text(encoding="utf-8").replace(
-                "model_auto_compact_token_limit = 900000",
-                "model_auto_compact_token_limit = 1000000",
-                1,
-            ),
-            encoding="utf-8",
-        )
+        config.write_text('model_context_window = 1000000\nmodel_auto_compact_token_limit = 1000000\n' + config.read_text())
         code, output = self.validate(self.codex_home)
         self.assertEqual(1, code)
         self.assertIn("auto-compact limit must stay below the context window", output)
+
+    def test_legacy_installed_roles_are_checked_against_bindings(self) -> None:
+        for alias, role in VALIDATE.ROUTING.ALIASES.items():
+            p = self.codex_home / "agents" / (role.replace("_", "-") + ".toml")
+            text = p.read_text().replace('name = "' + role + '"', 'name = "' + alias + '"')
+            p.unlink()
+            (p.parent / (alias.replace("_", "-") + ".toml")).write_text(text)
+        code, output = self.validate(self.codex_home, bindings=self.bindings_path)
+        self.assertEqual(0, code, output)
+        self.assertIn("Legacy role terra_worker maps to worker", output)
+
+    def test_missing_binding_warns_without_claiming_access(self) -> None:
+        code, output = self.validate(self.codex_home)
+        self.assertEqual(0, code, output)
+        self.assertIn("availability and tier compatibility are unverified", output)
+        self.assertIn("inference access not tested", output)
+
+    def test_binding_drift_is_rejected(self) -> None:
+        self.binding["bindings"]["worker"]["model"] = "gpt-6-luna"
+        self.bindings_path.write_text(json.dumps(self.binding))
+        code, output = self.validate(self.codex_home, bindings=self.bindings_path)
+        self.assertEqual(1, code)
+        self.assertIn("Binding no longer matches", output)
+
+    def test_installed_models_cannot_be_omitted(self) -> None:
+        p = self.codex_home / "agents/worker.toml"
+        p.write_text('\n'.join(line for line in p.read_text().splitlines() if not line.startswith('model =')))
+        code, output = self.validate(self.codex_home)
+        self.assertEqual(1, code)
+        self.assertIn("installed agent needs a resolved model", output)
+
+    def test_default_model_drift_fails_with_binding(self) -> None:
+        p = self.codex_home / "config.toml"
+        p.write_text(p.read_text().replace("gpt-6.1-sol", "gpt-6-luna"))
+        code, output = self.validate(self.codex_home, bindings=self.bindings_path)
+        self.assertEqual(1, code)
+        self.assertIn("default subagent model differs", output)
+
+    def test_primary_model_must_not_be_in_template(self) -> None:
+        p = self.skill / "assets/templates/codex/config-snippet.toml"
+        p.write_text('model = "gpt-6-astra"\n' + p.read_text())
+        code, output = self.validate()
+        self.assertEqual(1, code)
+        self.assertIn("preserve primary model", output)
+
+    def test_readonly_reviewer_cannot_become_writer(self) -> None:
+        self.replace("assets/templates/codex/agents/reviewer.toml", 'sandbox_mode = "read-only"', 'sandbox_mode = "workspace-write"')
+        code, output = self.validate()
+        self.assertEqual(1, code)
+        self.assertIn("sandbox must be read-only", output)
+
+    def test_project_rules_can_live_above_codex_home(self) -> None:
+        rules = Path(self.temporary.name) / "AGENTS.md"
+        shutil.move(self.codex_home / "AGENTS.md", rules)
+        validator = VALIDATE.Validator(None, self.skill, self.codex_home, bindings=self.bindings_path, codex_rules=rules)
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(0, validator.run(), validator.errors)
 
     def test_missing_scaling_reference_fails(self) -> None:
         (self.skill / "references" / "scaling.md").unlink()

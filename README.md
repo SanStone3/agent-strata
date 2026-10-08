@@ -37,16 +37,32 @@ flowchart TB
 
 | 工作类型 | Codex | Claude Code | 推理强度 | 默认权限 |
 |---|---|---|---|---|
-| 快速定位、依赖梳理 | Luna Scout | Haiku Scout | `medium` / 继承 | 只读 |
-| 明确的机械操作 | Luna Executor | 不单设；由主控直接处理 | `medium` | 有界写入 |
-| 常规代码实现、普通修复 | Terra Worker | Sonnet Worker | **`xhigh`** | 工作区写入 |
-| 跨模块、模糊、高风险实现 | Sol Worker | Opus Worker | **`xhigh`** | 工作区写入 |
-| 高风险最终审查 | Sol Reviewer | Opus Reviewer | **`xhigh`** | 只读 |
-| 超长、最高难度任务 | 主会话 Sol | Fable Controller / Worker / Reviewer | **`xhigh`** | 显式启用 |
+| 快速定位、依赖梳理 | `scout`（动态效率层） | Haiku Scout | `medium` / 继承 | 只读 |
+| 明确的机械操作 | `executor`（动态效率层） | 不单设；由主控直接处理 | `medium` | 有界写入 |
+| 常规代码实现、普通修复 | `worker`（动态平衡层） | Sonnet Worker | **`xhigh`** | 工作区写入 |
+| 跨模块、模糊、高风险实现 | `deep_worker`（动态深度层） | Opus Worker | **`xhigh`** | 工作区写入 |
+| 高风险最终审查 | `reviewer`（动态深度层） | Opus Reviewer | **`xhigh`** | 只读 |
+| 超长、最高难度任务 | 保留用户选择的主会话 | Fable Controller / Worker / Reviewer | **`xhigh`** | 显式启用 |
 
 推荐基线不是绝对真理。模型可用性、套餐、组织策略和 CLI 版本不同，安装时应先核验当前环境，再合并配置。
 
 Claude 的 `sonnet` / `opus` alias 在部分第三方 provider 上可能解析到不支持 `xhigh` 的旧模型，客户端会降到可用的较低档。安装完成的硬性验收是检查**实际解析后的模型和 effort**；不满足时应 pin 组织批准且支持 `xhigh` 的完整模型 ID，或明确报告该约束未满足。
+
+## Codex 模型自适应
+
+Codex 角色名与具体型号已分离。首次委派时，从当前调用工具的模型/effort 列表解析绑定；必要时通过短生命周期 app-server 的 `model/list` 补充目录。支持同系列新版本、明确的升级关系、用户固定型号、工具白名单交集和同层备选。未知能力的新系列保持未分类，不按版本号猜能力。
+
+```bash
+# 只读发现并解析，不启动推理、不修改配置
+python3 skills/strata/scripts/resolve_models.py --discover
+
+# 生成待合并的配置；输出目录必须尚不存在
+python3 skills/strata/scripts/resolve_models.py --discover --output-dir /path/to/new-staging-dir
+```
+
+当前已核验的策略将 GPT-6 Luna、GPT-6.1 Sol、GPT-6 Astra 分别作为效率、平衡、深度层候选；最终 ID 和 `xhigh` 支持取决于当前目录与工具限制。主模型、主会话 effort 和上下文设置保持用户选择。仅列出模型不能证明账号访问权限。
+
+原生工具支持覆盖模型时，每次调用明确传入绑定；仅支持命名 Agent 的客户端需要合并生成的定义并在会话边界刷新。模板本身不含型号，不能直接当作已绑定配置安装。旧角色名有迁移映射，校验器不再强制 GPT-5.6。详见 [模型路由、升级与回退](skills/strata/references/model-routing.md)。
 
 ## 并发预算：3 不是天花板
 
@@ -99,7 +115,8 @@ npx -y skills@1.5.23 add SanStone3/agent-strata -g -a claude-code -s strata -y
 ```text
 使用 strata skill，为当前客户端安装 Agent Strata 的全局配置。
 先检查现有配置和当前版本；备份后只做增量合并，不覆盖无关设置。
-采用推荐模型分层，主会话与代码 Worker 使用 xhigh；安装完成后运行校验并报告差异。
+Codex 先解析当前模型目录并生成角色绑定，保留主会话设置和用户固定型号；代码 Worker 使用 xhigh。
+安装完成后运行校验并报告实际模型、effort 与差异。
 不要配置 Codex 与 Claude 互相调用。
 ```
 
@@ -160,12 +177,13 @@ skills/strata/
 ├── SKILL.md                 # AI 的入口与路由规则
 ├── references/              # 安装、双端配置、任务契约、并发扩容和校验说明
 ├── assets/templates/        # 可合并的 Codex / Claude 模板
-└── scripts/validate.py      # 只读结构校验
+└── scripts/                 # 动态模型解析、配置生成与只读校验
 docs/
 ├── installation.md          # 人工与 AI 安装、全局/项目作用域
 └── orchestration.md         # 详细编排形式、升级条件和示例
 tests/
-└── test_validate.py         # 对错误模型、effort、YAML 与泄密检测做变异测试
+├── test_validate.py         # 配置、权限与泄密检测的变异测试
+└── test_resolve_models.py   # 动态路由、失败恢复、协议与迁移测试
 ```
 
 ## 校验
@@ -178,7 +196,7 @@ python3 -m unittest discover -s tests -v
 npx -y skills@1.5.23 add . --list
 ```
 
-加 `--codex-home ~/.codex` 或 `--claude-home ~/.claude` 可对本机已安装的活配置做同样的只读校验（检查实际生效的模型、effort、工具列表、并发上限、`CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH` 与核心禁令，而不只是仓库模板）。模板要求严格（并发预算固定为 3、1M context 基线），已安装的活配置则允许用户按需调高上限或省略不被账号支持的长会话基线。
+加 `--codex-home ~/.codex` 或 `--claude-home ~/.claude` 可对本机已安装的活配置做同样的只读校验（检查配置中的模型、effort、工具列表、并发上限、`CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH` 与核心禁令，而不只是仓库模板）。模板固定并发预算为 3，保留用户的主模型和上下文设置。Codex 加 `--bindings /path/to/model-bindings.json` 可校验解析结果与安装值一致；不加时会明确提示模型兼容性未验证。结构校验不能代替客户端实际生效值和推理访问验证。
 
 `validate.py` 只读取文件，不修改用户配置。
 
@@ -186,14 +204,14 @@ npx -y skills@1.5.23 add . --list
 
 ## 版本与依据
 
-本方案于 **2026-08-20** 对照官方文档核验，并于 **2026-09-20** 重新核验并发与嵌套相关事实（Codex 默认 4 线程含主线程、Claude Code 默认 20 并发与 3 层嵌套、两端相关配置键）：
+模型自适应于 **2026-10-08** 对照当前模型选择与 app-server 文档核验。原编排方案于 **2026-08-20** 对照官方文档核验，并于 **2026-09-20** 重新核验并发与嵌套相关事实（Codex 默认 4 线程含主线程、Claude Code 默认 20 并发与 3 层嵌套、两端相关配置键）：
 
 - [OpenAI：Codex Subagents](https://developers.openai.com/codex/subagents)
 - [OpenAI：Codex Skills](https://developers.openai.com/codex/skills)
 - [OpenAI：Codex Config Basics](https://developers.openai.com/codex/config-basic)
 - [OpenAI：Codex Sample Configuration](https://developers.openai.com/codex/config-sample)
 - [OpenAI：AGENTS.md](https://developers.openai.com/codex/guides/agents-md)
-- [OpenAI：GPT-5.6 Model Guidance](https://developers.openai.com/api/docs/guides/latest-model)
+- [OpenAI：Current Model Guidance](https://developers.openai.com/api/docs/guides/latest-model)
 - [Anthropic：Claude Code Skills](https://code.claude.com/docs/en/skills)
 - [Anthropic：Claude Code Subagents](https://code.claude.com/docs/en/sub-agents)
 - [Anthropic：Claude Code Environment Variables](https://code.claude.com/docs/en/env-vars)

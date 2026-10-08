@@ -2,18 +2,20 @@
 
 Read this reference only for Codex installation, routing, or troubleshooting.
 
-## Recommended roles
+## Adaptive roles
 
-| Agent | Model | Effort | Mode | Use |
+Read [model-routing.md](model-routing.md) before resolving or dispatching models. The policy and live catalog produce concrete IDs; templates do not pin a generation.
+
+| Agent | Capability tier | Effort | Mode | Use |
 |---|---|---|---|---|
-| Primary controller | `gpt-5.6-sol` | `xhigh` | inherited session | Goal ownership, decomposition, integration |
-| `luna_scout` | `gpt-5.6-luna` | `medium` | read-only | Locate paths, dependencies, evidence |
-| `luna_executor` | `gpt-5.6-luna` | `medium` | workspace-write | Exact mechanical operations only |
-| `terra_worker` | `gpt-5.6-terra` | `xhigh` | workspace-write | Ordinary bounded implementation |
-| `sol_worker` | `gpt-5.6-sol` | `xhigh` | workspace-write | Complex/high-risk implementation |
-| `sol_reviewer` | `gpt-5.6-sol` | `xhigh` | read-only | Consequential final review |
+| Primary controller | user's existing selection | preserved | inherited session | Goal ownership, decomposition, integration |
+| `scout` | efficient | `medium` | read-only | Locate paths, dependencies, evidence |
+| `executor` | efficient | `medium` | workspace-write | Exact mechanical operations |
+| `worker` | balanced | `xhigh` | workspace-write | Ordinary bounded implementation |
+| `deep_worker` | deep | `xhigh` | workspace-write | Complex/high-risk implementation |
+| `reviewer` | deep | `xhigh` | read-only | Consequential final review |
 
-The model family and effort values are verified against official documentation as of 2026-08-20. Recheck current docs when upgrading.
+Runtime model and effort overrides must follow the current native tool schema and fork restrictions. If overrides are unavailable, resolve and render definitions, merge them during installation/update, then verify client reload before dispatch. An unresolved role is not permission to lower effort or inherit an unknown model.
 
 ## Concurrency
 
@@ -42,9 +44,9 @@ Custom personal agents live in `~/.codex/agents/`; project agents live in `.code
 
 ## Merge notes
 
-- `model_context_window = 1000000` and `model_auto_compact_token_limit = 900000` are an opinionated long-session baseline. Do not apply them when the selected model/account does not support that window.
+- Preserve the user-selected primary model, effort, context window and auto-compact limit. Model discovery does not prove context-window entitlement.
 - `max_concurrent_threads_per_session = 3` counts spawned threads, excluding the primary.
-- The custom agent's model and reasoning values override defaults. Keep Worker and Reviewer files explicit so code/review remains `xhigh`.
+- Rendered custom agents contain explicit model and reasoning values. Keep Workers and Reviewers at `xhigh`; do not copy unresolved source templates into a live installation.
 - Subagents inherit current sandbox/approval policy and live runtime overrides. A custom agent's `sandbox_mode = "read-only"` is a useful default, not permission to ignore a broader parent override; the controller must still enforce read-only behavior.
 - Project `.codex/` configuration loads only for trusted projects. Never mark a project trusted merely to complete installation without user intent.
 - Current local Codex releases delegate after a direct request or applicable project/skill instruction. The installed skill and AGENTS rules provide that applicable instruction for suitable tasks.
@@ -52,7 +54,7 @@ Custom personal agents live in `~/.codex/agents/`; project agents live in `.code
 
 ## Escalation
 
-`terra_worker` stops and returns to the controller if the work crosses a public interface, security boundary, concurrency/lifecycle boundary, data migration, multiple subsystems, or otherwise needs Sol-level judgment. The controller rewrites the packet for `sol_worker`; it does not let Terra continue with expanded scope.
+`worker` stops and returns to the controller if the work crosses a public interface, security boundary, concurrency/lifecycle boundary, data migration, multiple subsystems, or otherwise needs deep-worker judgment. The controller rewrites the packet for `deep_worker`; it does not let the ordinary worker continue with expanded scope.
 
 ## Official sources
 

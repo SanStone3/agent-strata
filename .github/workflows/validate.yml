@@ -10,16 +10,19 @@ permissions:
 jobs:
   validate:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python: ["3.10", "3.12"]
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
-          python-version: "3.12"
+          python-version: ${{ matrix.python }}
       - name: Install validation dependency
         run: python3 -m pip install -r requirements-dev.txt
       - name: Validate skill and templates
         run: python3 skills/strata/scripts/validate.py --repo .
-      - name: Run validator mutation tests
+      - name: Run routing, protocol, migration and validator tests
         run: python3 -m unittest discover -s tests -v
       - name: Check skill discovery
         run: npx -y skills@1.5.23 add . --list
