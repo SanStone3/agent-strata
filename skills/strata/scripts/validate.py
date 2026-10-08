@@ -399,6 +399,10 @@ class Validator:
                 self.error("Codex template must preserve primary model, effort and context settings")
         elif model is not None and (not isinstance(model, str) or not model.strip()):
             self.error("Codex primary model must be a nonempty string when set")
+        if not template and self.bindings and "controller" in self.bindings:
+            controller = self.bindings["controller"]
+            if model != controller["model"] or config.get("model_reasoning_effort") != controller["reasoning_effort"]:
+                self.error("Codex primary model/effort differs from the controller binding")
         window = config.get("model_context_window")
         compact = config.get("model_auto_compact_token_limit")
         for key, value in (("model_context_window", window), ("model_auto_compact_token_limit", compact)):
@@ -497,7 +501,7 @@ class Validator:
             if self.bindings_path:
                 result = ROUTING.verify_binding(ROUTING.read_json(self.bindings_path), policy)
                 if result["unresolved"]:
-                    raise ROUTING.RoutingError("Installed configuration requires all five role bindings")
+                    raise ROUTING.RoutingError("Installed configuration requires the controller (unless preserved) and all five subagent bindings")
                 self.bindings = result["bindings"]
         except (ROUTING.RoutingError, TypeError, KeyError) as exc:
             self.error(f"Model routing validation failed: {exc}")

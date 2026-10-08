@@ -4,7 +4,7 @@ Read this for Codex delegation, installation, model upgrades or unavailable-mode
 
 ## Stable roles and authoritative inputs
 
-The role names are `scout`, `executor`, `worker`, `deep_worker`, and `reviewer`. Their write boundaries and reasoning requirements do not change when models change. The primary session retains the user's selected model, effort and context settings. This skill cannot switch an already-running primary model by editing a file.
+The role names are `scout`, `executor`, `worker`, `deep_worker`, and `reviewer`. Their write boundaries and reasoning requirements do not change when models change. The separate `controller` binding defaults to the strongest eligible deep-tier model at `xhigh`. It configures the primary session, not a sixth subagent. Preserve context and auto-compact settings. This skill cannot switch an already-running primary model by editing a file.
 
 Read the active native spawn tool's schema first. Its permitted model IDs, effort values, fork rules and host restrictions are authoritative for that call. A desktop app, CLI, API account and remote host can have different catalogs. Never assume API `/v1/models`, a local cache file, or a separate CLI process proves what the current spawn tool accepts.
 
@@ -38,7 +38,7 @@ The resolver returns bindings, alternatives, unresolved roles, unclassified mode
 
 If combining a CLI catalog with a narrower calling-tool allowlist, repeat `--allowed-model MODEL` for the allowed IDs. Effort options must also agree: construct the input catalog from their intersection when the surfaces differ. `--require-modality image` requires explicit image metadata. An empty/failed discovery must not turn into an unconstrained allowlist.
 
-Honor user-selected role models by passing `--pin ROLE=MODEL` (or putting them in a local policy's `pins`). Existing installation-specific model choices remain pinned unless the user has requested adaptive management of those roles. Pins never silently fall back and still require the role's effort and minimum capability. Unknown models require an evidence-backed classification before use. Missing constraints mean “unresolved”, not permission to guess.
+Honor user-selected role models by passing `--pin ROLE=MODEL` (or putting them in a local policy's `pins`). Existing installation-specific model choices remain pinned unless the user has requested adaptive management of those roles. Pins never silently fall back and still require the role's effort and minimum capability. An explicit controller pin may choose a lower known tier because the user owns that choice; it must still support `xhigh`. To preserve a different primary effort too, use `--preserve-primary`. Unknown models require an evidence-backed classification before use. Missing constraints mean “unresolved”, not permission to guess.
 
 Example of deliberately keeping a selected worker model:
 
@@ -52,6 +52,8 @@ python3 scripts/resolve_models.py --catalog /path/to/models.json \
 [../assets/model-policy.json](../assets/model-policy.json) is a Strata policy, not a Codex configuration file. The reviewed families classify efficiency, balanced implementation and deep reasoning. Future minor versions within those reviewed families are eligible when the current catalog lists them with the required effort. Numeric version comparison happens only after family classification; arbitrary newer names are never assumed stronger.
 
 Catalog `upgrade` links can carry a known role tier to a new successor name. Explicit policy classifications take precedence when a successor is already known. Cycles or conflicting inherited tiers stop resolution. Prefer the current reviewed lineage, newer numeric version and upgrade successor; use the catalog default as a tie-breaker. Hidden entries are eligible only through an explicit pin. Missing effort data does not prove support for `xhigh`.
+
+The controller is resolved together with the five subagent roles. Use `--role controller` to inspect its recommendation, `--pin controller=MODEL` for an explicit primary choice, or `--preserve-primary` to exclude primary configuration from the output. A controller pin and preserve-primary are mutually exclusive. Existing model settings do not count as an intentional pin when the user requests the recommended setup; explicit user choices do. Primary and subagent catalogs can differ: resolve the controller against its own host/model-picker catalog before applying it.
 
 Automatic alternatives stay in the same capability tier. This is a capability policy, not a live price estimator: no price or quota is inferred from the model name. Apply any organization budget/allowlist before resolution. A user may explicitly pin a stronger tier; automatic escalation to another tier is disabled. A new major family with no reliable upgrade link remains unclassified until reviewed.
 
@@ -77,9 +79,9 @@ If a failed task may have edited files or called external services, inspect actu
 python3 scripts/resolve_models.py --discover --output-dir /path/to/new-staging-dir
 ```
 
-Or use `--catalog` when the active tool is the authority. The output directory must not exist. Rendering requires all five roles and produces `agents/*.toml`, `config-snippet.toml`, `AGENTS-snippet.md`, and `model-bindings.json`. It writes only that new directory and removes incomplete output on an error. It never installs into a live home or merges unrelated settings.
+Or use `--catalog` when the active tool is the authority. The output directory must not exist. Rendering requires a resolved controller (unless `--preserve-primary`) and all five subagent roles, and produces `agents/*.toml`, `config-snippet.toml`, `AGENTS-snippet.md`, and `model-bindings.json`. It writes only that new directory and removes incomplete output on an error. It never installs into a live home or merges unrelated settings.
 
-Follow [install.md](install.md) to back up and merge. Use the generated `default_subagent_model` and explicit per-role models; preserve the primary model, effort, context window, permissions and unrelated settings. Keep `model-bindings.json` beside the merged configuration for inspection, but regenerate it from the current surface when validating a later upgrade. Do not commit host/account-specific catalogs or global configuration to the public repository.
+Follow [install.md](install.md) to back up and merge. Merge the generated top-level `model` and `model_reasoning_effort` for the controller, `default_subagent_model`, and explicit per-role models. With `--preserve-primary`, generated output omits primary keys. Preserve context window, permissions and unrelated settings. Keep `model-bindings.json` beside the merged configuration for inspection, but regenerate it from the current surface when validating a later upgrade. Do not commit host/account-specific catalogs or global configuration to the public repository.
 
 Legacy names are migration aliases:
 
@@ -98,7 +100,7 @@ python3 scripts/validate.py --codex-home /path/to/codex-home \
   --bindings /path/to/new-staging-dir/model-bindings.json
 ```
 
-For project scope, add `--codex-rules /path/to/project/AGENTS.md`. If a local policy was used, pass the same `--model-policy /path/to/policy.json`. The validator recomputes the binding against its captured catalog and policy, checks installed models/efforts against it, and rejects drift or stale snapshots. Without `--bindings`, installed validation reports that model compatibility is unverified. Neither mode proves account access, live tool compatibility, effective client precedence or inference success; verify those through the authorized native task.
+For project scope, add `--codex-rules /path/to/project/AGENTS.md`. If a local policy was used, pass the same `--model-policy /path/to/policy.json`. The validator recomputes the binding against its captured catalog and policy, checks installed primary and subagent models/efforts against it, and rejects drift or stale snapshots. Without `--bindings`, installed validation reports that model compatibility is unverified. Neither mode proves account access, live tool compatibility, effective client precedence or inference success; verify those through the authorized native task.
 
 ## Sources
 

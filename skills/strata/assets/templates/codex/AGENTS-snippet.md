@@ -3,6 +3,7 @@
 
 For complex work with independent workstreams or noisy bounded exploration, use the `strata` skill and native Codex subagents. Keep the current main session as the sole controller and final owner.
 
+- Prefer the strongest eligible deep-tier primary controller at xhigh. Honor an explicit controller pin or preserve-primary choice. Resolve its recommendation at session start; apply global model changes only during an authorized setup/update, and never claim an active session switched because a file changed.
 - Before the first delegation, use the Strata model-routing reference and resolver to bind stable roles to the current tool catalog. Honor model pins, pass resolved model/effort explicitly when supported, and refresh on host/account/tool changes or explicit model rejection. Otherwise use verified rendered agent definitions. Never dispatch unresolved or bare model-free templates.
 - Do not delegate small, sequential, or same-file tasks.
 - Keep at most three active subagents and one writer by default. The budget caps concurrency, not total work: additional packets run as further waves.

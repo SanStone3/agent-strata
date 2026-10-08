@@ -159,9 +159,10 @@ class ValidatorMutationTests(unittest.TestCase):
         code, output = self.validate(self.codex_home)
         self.assertEqual(0, code, output)
         config = self.codex_home / "config.toml"
-        config.write_text('model = "user-selected-model"\nmodel_reasoning_effort = "high"\n' + config.read_text(), encoding="utf-8")
-        code, output = self.validate(self.codex_home, bindings=self.bindings_path)
+        config.write_text(config.read_text().replace('model = "gpt-6-astra"', 'model = "user-selected-model"').replace('model_reasoning_effort = "xhigh"', 'model_reasoning_effort = "high"'), encoding="utf-8")
+        code, output = self.validate(self.codex_home)
         self.assertEqual(0, code, output)
+        config.write_text(config.read_text().replace("user-selected-model", "gpt-6-astra").replace('model_reasoning_effort = "high"', 'model_reasoning_effort = "xhigh"'))
         agent = self.codex_home / "agents/reviewer.toml"
         agent.write_text(agent.read_text().replace("gpt-6-astra", "gpt-6-luna"))
         code, output = self.validate(self.codex_home, bindings=self.bindings_path)
@@ -313,6 +314,13 @@ status_line = ["model-name"]
         code, output = self.validate(self.codex_home, bindings=self.bindings_path)
         self.assertEqual(1, code)
         self.assertIn("Binding no longer matches", output)
+
+    def test_controller_configuration_drift_is_rejected(self) -> None:
+        config = self.codex_home / "config.toml"
+        config.write_text(config.read_text().replace('model_reasoning_effort = "xhigh"', 'model_reasoning_effort = "high"'))
+        code, output = self.validate(self.codex_home, bindings=self.bindings_path)
+        self.assertEqual(1, code)
+        self.assertIn("primary model/effort differs from the controller binding", output)
 
     def test_installed_models_cannot_be_omitted(self) -> None:
         p = self.codex_home / "agents/worker.toml"

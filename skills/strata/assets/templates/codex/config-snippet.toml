@@ -1,7 +1,8 @@
 # Merge these keys into ~/.codex/config.toml for global scope or
 # <repo>/.codex/config.toml for project scope. Do not replace the whole file.
 
-# Preserve the user-selected primary model, effort, and context settings.
+# Rendering adds the strongest eligible controller model and xhigh by default.
+# Honor explicit controller pins or --preserve-primary; preserve context settings.
 # Resolve subagent models before dispatch or render an installation snapshot.
 
 [agents]

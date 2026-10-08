@@ -32,7 +32,7 @@ When both providers are requested, configure them as two independent clients. Ne
 
 ## Route live work
 
-For Codex, resolve the stable roles against the current native tool catalog using `scripts/resolve_models.py`; use its selected model and effort explicitly, or a verified rendered installation when overrides are unavailable. Preserve the user-selected primary model and role pins. Never dispatch model-free templates as if they were bound agents.
+For Codex, resolve the stable roles against the current native tool catalog using `scripts/resolve_models.py`; use its selected model and effort explicitly, or a verified rendered installation when overrides are unavailable. Recommend the strongest eligible deep-tier model at `xhigh` for the primary controller. Honor an explicit `controller` pin or `--preserve-primary`; existing config alone is not a permanent pin when the user requests Strata defaults. Apply a new primary binding during an authorized installation/update, never by silently rewriting global config during an ordinary task. An active session may require a model-picker change or a new session; report a mismatch without claiming a live switch. Never dispatch model-free templates as if they were bound agents.
 
 Before delegating, classify the work:
 
@@ -65,7 +65,7 @@ Treat installation as a merge, not a copy operation:
 2. If scope is unspecified, infer global only from language such as “all projects” or “this computer”; otherwise use project scope when operating for one repository. Ask only when the choice remains materially ambiguous.
 3. Back up each existing file before changing it.
 4. Merge only the relevant keys and append a clearly delimited rules section. Preserve unrelated models, permissions, MCP servers, plugins, hooks, trust entries, and user customizations.
-5. For Codex, resolve and render a fresh binding first, then merge those generated definitions after checking same-name conflicts; source templates deliberately omit models. For Claude, use its independent native templates. Preserve primary model/context choices and migrate legacy role names with their references.
+5. For Codex, resolve and render a fresh binding first, then merge those generated definitions after checking same-name conflicts; source templates deliberately omit models. For Claude, use its independent native templates. Merge the resolved controller model/effort unless explicitly preserved; retain context settings and migrate legacy role names with their references.
 6. Do not lower sandbox or permission controls, add credentials, or enable cross-provider execution.
 7. Parse the resulting formats, run `scripts/validate.py` against the source or installed layout when possible, and confirm the client's actually resolved model, effort, and effective concurrency cap. If an alias resolves to a model that cannot run `xhigh`, pin an organization-approved compatible full ID or report that the coding-worker invariant remains unmet.
 8. Report exact changes, effective rather than merely requested model/effort, the effective concurrency cap, and restart requirements.

@@ -24,6 +24,8 @@ ROLES = {
     "deep_worker": ("deep", "xhigh", "workspace-write"),
     "reviewer": ("deep", "xhigh", "read-only"),
 }
+CONTROLLER = {"controller": ("deep", "xhigh", "inherited")}
+ALL_ROLES = {**CONTROLLER, **ROLES}
 ALIASES = {"luna_scout": "scout", "luna_executor": "executor",
            "terra_worker": "worker", "sol_worker": "deep_worker", "sol_reviewer": "reviewer"}
 
@@ -115,6 +117,8 @@ def validate_policy(policy):
     for role, (tier, effort, sandbox) in ROLES.items():
         if policy["roles"][role] != {"tier": tier, "effort": effort, "sandbox": sandbox}:
             raise RoutingError(f"Policy changes the capability/effort/sandbox contract for {role}")
+    if policy.get("controller") != {"tier": "deep", "effort": "xhigh", "sandbox": "inherited"}:
+        raise RoutingError("Policy must recommend a deep-tier xhigh controller")
     families = policy.get("families")
     if not isinstance(families, list):
         raise RoutingError("Policy families must be an array")
@@ -132,7 +136,7 @@ def validate_policy(policy):
         if not isinstance(info, dict) or info.get("tier") not in TIERS or not info.get("evidence") or type(info.get("priority")) is not int:
             raise RoutingError(f"Explicit model classification needs tier, priority and evidence: {model}")
     for role, model in policy.get("pins", {}).items():
-        if role not in ROLES or not isinstance(model, str) or not model:
+        if role not in ALL_ROLES or not isinstance(model, str) or not model:
             raise RoutingError("Invalid role pin")
 
 
@@ -183,7 +187,7 @@ def classifications(models, policy):
     return known
 
 
-def resolve(payload, policy, *, pins=None, excluded=(), allowed=None, modalities=()):
+def resolve(payload, policy, *, pins=None, excluded=(), allowed=None, modalities=(), preserve_primary=False):
     validate_policy(policy)
     if not isinstance(payload, dict):
         raise RoutingError("Catalog must be an object")
@@ -193,12 +197,16 @@ def resolve(payload, policy, *, pins=None, excluded=(), allowed=None, modalities
     known = classifications(models, policy)
     selected_pins = dict(policy.get("pins", {}))
     selected_pins.update(pins or {})
-    if set(selected_pins) - set(ROLES):
+    if set(selected_pins) - set(ALL_ROLES):
         raise RoutingError("Unknown pinned role")
+    if preserve_primary and "controller" in selected_pins:
+        raise RoutingError("Cannot combine a controller pin with preserve-primary")
     bindings, unresolved = {}, {}
     excluded = set(excluded)
     allowed = set(allowed) if allowed is not None else None
-    for role, (tier, effort, sandbox) in ROLES.items():
+    for role, (tier, effort, sandbox) in ALL_ROLES.items():
+        if role == "controller" and preserve_primary:
+            continue
         pin = selected_pins.get(role)
         candidates = []
         for name, model in models.items():
@@ -210,7 +218,7 @@ def resolve(payload, policy, *, pins=None, excluded=(), allowed=None, modalities
             if modalities and not set(modalities).issubset(model["inputModalities"] or []):
                 continue
             if pin:
-                if name != pin or TIERS[info["tier"]] < TIERS[tier]:
+                if name != pin or (role != "controller" and TIERS[info["tier"]] < TIERS[tier]):
                     continue
             elif info["tier"] != tier:
                 continue
@@ -221,7 +229,7 @@ def resolve(payload, policy, *, pins=None, excluded=(), allowed=None, modalities
             continue
         name = candidates[0]
         bindings[role] = {"model": name, "reasoning_effort": effort, "sandbox_mode": sandbox,
-                          "tier": tier, "pinned": bool(pin), "evidence": known[name]["evidence"],
+                          "tier": known[name]["tier"], "pinned": bool(pin), "evidence": known[name]["evidence"],
                           "alternatives": candidates[1:] if not pin else []}
     return {"schema_version": 1, "generated_at": utc_now(),
             "catalog_captured_at": payload.get("captured_at"),
@@ -230,7 +238,7 @@ def resolve(payload, policy, *, pins=None, excluded=(), allowed=None, modalities
             "catalog": list(models.values()), "bindings": bindings, "unresolved": unresolved,
             "constraints": {"pins": selected_pins, "excluded": sorted(excluded),
                             "allowed": sorted(allowed) if allowed is not None else None,
-                            "modalities": sorted(modalities)},
+                            "modalities": sorted(modalities), "preserve_primary": preserve_primary},
             "unclassified": sorted(set(models) - set(known)),
             "access_verified": False,
             "warnings": ["Catalog membership is not an entitlement or successful-inference check.",
@@ -358,12 +366,16 @@ def render(document, directory, skill=SKILL):
     directory.mkdir(parents=True)
     try:
         (directory / "agents").mkdir()
-        for role, binding in document["bindings"].items():
+        for role in ROLES:
+            binding = document["bindings"][role]
             filename = role.replace("_", "-") + ".toml"
             content = (template / "agents" / filename).read_text(encoding="utf-8")
             (directory / "agents" / filename).write_text(
                 "model = " + json.dumps(binding["model"]) + "\n" + content, encoding="utf-8")
         content = (template / "config-snippet.toml").read_text(encoding="utf-8")
+        controller = document["bindings"].get("controller")
+        if controller:
+            content = "model = " + json.dumps(controller["model"]) + "\nmodel_reasoning_effort = " + json.dumps(controller["reasoning_effort"]) + "\n\n" + content
         content = content.replace("[agents]\n", "[agents]\ndefault_subagent_model = " + json.dumps(document["bindings"]["worker"]["model"]) + "\n", 1)
         (directory / "config-snippet.toml").write_text(content, encoding="utf-8")
         shutil.copyfile(template / "AGENTS-snippet.md", directory / "AGENTS-snippet.md")
@@ -385,7 +397,8 @@ def main(argv=None):
     parser.add_argument("--exclude", action="append", default=[], metavar="MODEL")
     parser.add_argument("--allowed-model", action="append", help="intersect with calling tool's model allowlist")
     parser.add_argument("--require-modality", action="append", default=[])
-    parser.add_argument("--role", choices=list(ROLES) + list(ALIASES), help="require only this role to resolve")
+    parser.add_argument("--role", choices=list(ALL_ROLES) + list(ALIASES), help="require only this role to resolve")
+    parser.add_argument("--preserve-primary", action="store_true", help="resolve only subagents; leave primary model and effort unchanged")
     parser.add_argument("--output-dir", type=Path, help="render all roles into a new staging directory")
     args = parser.parse_args(argv)
     try:
@@ -393,12 +406,12 @@ def main(argv=None):
         for item in args.pin:
             role, separator, model = item.partition("=")
             role = ALIASES.get(role, role)
-            if not separator or role not in ROLES or not model or role in pins:
+            if not separator or role not in ALL_ROLES or not model or role in pins:
                 raise RoutingError("Pins must be unique ROLE=MODEL pairs")
             pins[role] = model
         payload = discover(args.codex, args.timeout) if args.discover else read_json(args.catalog)
         result = resolve(payload, read_json(args.policy), pins=pins, excluded=args.exclude,
-                         allowed=args.allowed_model, modalities=args.require_modality)
+                         allowed=args.allowed_model, modalities=args.require_modality, preserve_primary=args.preserve_primary)
         if args.output_dir:
             render(result, args.output_dir)
         print(json.dumps(result, indent=2))

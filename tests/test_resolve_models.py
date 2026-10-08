@@ -43,7 +43,41 @@ class RoutingTests(unittest.TestCase):
                            "deep_worker": "gpt-6-astra", "reviewer": "gpt-6-astra"}.items():
             self.assertEqual(name, doc["bindings"][role]["model"])
         self.assertFalse(doc["access_verified"])
+        self.assertEqual("gpt-6-astra", doc["bindings"]["controller"]["model"])
+        self.assertEqual("xhigh", doc["bindings"]["controller"]["reasoning_effort"])
+        self.assertEqual("inherited", doc["bindings"]["controller"]["sandbox_mode"])
         self.assertEqual("read-only", doc["bindings"]["reviewer"]["sandbox_mode"])
+
+    def test_controller_tracks_newest_eligible_deep_model(self):
+        doc = self.resolve(catalog(model("gpt-6.2-astra")))
+        self.assertEqual("gpt-6.2-astra", doc["bindings"]["controller"]["model"])
+
+    def test_explicit_controller_choice_is_respected(self):
+        doc = self.resolve(pins={"controller": "gpt-6.1-sol"})
+        self.assertEqual("gpt-6.1-sol", doc["bindings"]["controller"]["model"])
+        self.assertTrue(doc["bindings"]["controller"]["pinned"])
+        self.assertEqual("balanced", doc["bindings"]["controller"]["tier"])
+
+    def test_missing_deep_tier_does_not_weaken_controller(self):
+        doc = self.resolve({"models": [model("gpt-6.1-sol")]})
+        self.assertIn("controller", doc["unresolved"])
+        self.assertNotIn("controller", doc["bindings"])
+
+    def test_controller_requires_xhigh_even_when_pinned(self):
+        payload = {"models": [{"model": "gpt-6-astra", "efforts": ["high"]}]}
+        self.assertIn("controller", self.resolve(payload, pins={"controller": "gpt-6-astra"})["unresolved"])
+
+    def test_preserve_primary_roundtrip_and_render(self):
+        doc = self.resolve(preserve_primary=True)
+        self.assertNotIn("controller", doc["bindings"])
+        self.assertEqual(doc["bindings"], R.verify_binding(doc, self.policy)["bindings"])
+        with tempfile.TemporaryDirectory() as tmp:
+            directory = Path(tmp) / "out"
+            R.render(doc, directory)
+            content = (directory / "config-snippet.toml").read_text()
+            self.assertFalse(any(line.startswith(("model =", "model_reasoning_effort =")) for line in content.splitlines()))
+        with self.assertRaisesRegex(R.RoutingError, "Cannot combine"):
+            self.resolve(preserve_primary=True, pins={"controller": "gpt-6-astra"})
 
     def test_new_minor_version_is_numeric_not_lexical(self):
         doc = self.resolve(catalog(model("gpt-6.9-sol"), model("gpt-6.10-sol")))
@@ -185,7 +219,8 @@ class RoutingTests(unittest.TestCase):
             self.assertEqual(5, len(list((directory / "agents").glob("*.toml"))))
             self.assertIn('model = "gpt-6.1-sol"', (directory / "agents/worker.toml").read_text())
             text = (directory / "config-snippet.toml").read_text()
-            self.assertNotIn('\nmodel =', text)
+            self.assertIn('model = "gpt-6-astra"', text)
+            self.assertIn('model_reasoning_effort = "xhigh"', text)
             self.assertNotIn('model_context_window =', text)
             with self.assertRaisesRegex(R.RoutingError, "already exists"):
                 R.render(self.resolve(), directory)

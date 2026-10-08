@@ -42,7 +42,7 @@ flowchart TB
 | 常规代码实现、普通修复 | `worker`（动态平衡层） | Sonnet Worker | **`xhigh`** | 工作区写入 |
 | 跨模块、模糊、高风险实现 | `deep_worker`（动态深度层） | Opus Worker | **`xhigh`** | 工作区写入 |
 | 高风险最终审查 | `reviewer`（动态深度层） | Opus Reviewer | **`xhigh`** | 只读 |
-| 超长、最高难度任务 | 保留用户选择的主会话 | Fable Controller / Worker / Reviewer | **`xhigh`** | 显式启用 |
+| 主控规划与整合 | 最强可用深度层 `controller` | Fable Controller / Worker / Reviewer | **`xhigh`** | 显式启用 |
 
 推荐基线不是绝对真理。模型可用性、套餐、组织策略和 CLI 版本不同，安装时应先核验当前环境，再合并配置。
 
@@ -60,7 +60,7 @@ python3 skills/strata/scripts/resolve_models.py --discover
 python3 skills/strata/scripts/resolve_models.py --discover --output-dir /path/to/new-staging-dir
 ```
 
-当前已核验的策略将 GPT-6 Luna、GPT-6.1 Sol、GPT-6 Astra 分别作为效率、平衡、深度层候选；最终 ID 和 `xhigh` 支持取决于当前目录与工具限制。主模型、主会话 effort 和上下文设置保持用户选择。仅列出模型不能证明账号访问权限。
+当前已核验的策略将 GPT-6 Luna、GPT-6.1 Sol、GPT-6 Astra 分别作为效率、平衡、深度层候选；最终 ID 和 `xhigh` 支持取决于当前目录与工具限制。主控默认同样解析为最强可用深度层 + `xhigh`。支持 `--pin controller=MODEL` 固定选择，或 `--preserve-primary` 保留原主模型和 effort；上下文设置始终保留。仅列出模型不能证明账号访问权限。
 
 原生工具支持覆盖模型时，每次调用明确传入绑定；仅支持命名 Agent 的客户端需要合并生成的定义并在会话边界刷新。模板本身不含型号，不能直接当作已绑定配置安装。旧角色名有迁移映射，校验器不再强制 GPT-5.6。详见 [模型路由、升级与回退](skills/strata/references/model-routing.md)。
 
@@ -115,7 +115,7 @@ npx -y skills@1.5.23 add SanStone3/agent-strata -g -a claude-code -s strata -y
 ```text
 使用 strata skill，为当前客户端安装 Agent Strata 的全局配置。
 先检查现有配置和当前版本；备份后只做增量合并，不覆盖无关设置。
-Codex 先解析当前模型目录并生成角色绑定，保留主会话设置和用户固定型号；代码 Worker 使用 xhigh。
+Codex 先解析当前模型目录并生成角色绑定，主控采用最强可用层 + xhigh，尊重用户明确固定的型号，保留上下文设置；代码 Worker 使用 xhigh。
 安装完成后运行校验并报告实际模型、effort 与差异。
 不要配置 Codex 与 Claude 互相调用。
 ```
@@ -196,7 +196,7 @@ python3 -m unittest discover -s tests -v
 npx -y skills@1.5.23 add . --list
 ```
 
-加 `--codex-home ~/.codex` 或 `--claude-home ~/.claude` 可对本机已安装的活配置做同样的只读校验（检查配置中的模型、effort、工具列表、并发上限、`CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH` 与核心禁令，而不只是仓库模板）。模板固定并发预算为 3，保留用户的主模型和上下文设置。Codex 加 `--bindings /path/to/model-bindings.json` 可校验解析结果与安装值一致；不加时会明确提示模型兼容性未验证。结构校验不能代替客户端实际生效值和推理访问验证。
+加 `--codex-home ~/.codex` 或 `--claude-home ~/.claude` 可对本机已安装的活配置做同样的只读校验（检查配置中的模型、effort、工具列表、并发上限、`CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH` 与核心禁令，而不只是仓库模板）。模板固定并发预算为 3；生成配置包含最强可用主控 + xhigh，显式保留模式除外；上下文设置不变。Codex 加 `--bindings /path/to/model-bindings.json` 可校验解析结果与安装值一致；不加时会明确提示模型兼容性未验证。结构校验不能代替客户端实际生效值和推理访问验证。
 
 `validate.py` 只读取文件，不修改用户配置。
 
