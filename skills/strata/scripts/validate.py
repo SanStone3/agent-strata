@@ -41,6 +41,7 @@ REQUIRED_SKILL_FILES = (
     "references/install.md",
     "references/codex.md",
     "references/model-routing.md",
+    "references/auth-context.md",
     "assets/model-policy.json",
     "scripts/resolve_models.py",
     "references/claude.md",
@@ -60,7 +61,7 @@ CODEX_AGENTS = {
 LEGACY_CODEX_AGENTS = {role: alias for alias, role in ROUTING.ALIASES.items()}
 
 CODEX_CONFIG_ROOT_KEYS = frozenset(
-    {"model", "model_context_window", "model_auto_compact_token_limit", "model_reasoning_effort"}
+    {"model", "model_context_window", "model_auto_compact_token_limit", "model_reasoning_effort", "model_provider"}
 )
 CODEX_CONFIG_TABLE_KEYS = {
     "agents": frozenset(
@@ -153,6 +154,8 @@ class Validator:
         bindings: Path | None = None,
         model_policy: Path | None = None,
         codex_rules: Path | None = None,
+        codex_profile: str | None = None,
+        runtime_context: Path | None = None,
     ) -> None:
         self.repository_mode = repo is not None
         self.root = repo.resolve() if repo is not None else skill.resolve()
@@ -164,6 +167,10 @@ class Validator:
         self.bindings_path = bindings
         self.model_policy = model_policy or self.skill / "assets/model-policy.json"
         self.codex_rules = codex_rules
+        self.codex_profile = codex_profile
+        self.runtime_context = runtime_context
+        self.binding_context: dict[str, Any] | None = None
+        self.effective_codex_provider: str | None = None
         self.bindings: dict[str, Any] | None = None
 
     def error(self, message: str) -> None:
@@ -393,6 +400,29 @@ class Validator:
         )
         if config is None:
             return
+        if not template and self.codex_profile:
+            if not re.fullmatch(r"[A-Za-z0-9_-]+", self.codex_profile):
+                self.error("Codex profile must be a simple profile name")
+                return
+            profile_path = config_path.parent / (self.codex_profile + ".config.toml")
+            if not self.require(profile_path):
+                return
+            overlay = self.load_toml(profile_path, root_keys=CODEX_CONFIG_ROOT_KEYS, table_keys=CODEX_CONFIG_TABLE_KEYS)
+            if overlay is None:
+                return
+            config = dict(config)
+            for key, value in overlay.items():
+                if isinstance(value, dict) and isinstance(config.get(key), dict):
+                    config[key] = {**config[key], **value}
+                else:
+                    config[key] = value
+        if not template:
+            self.effective_codex_provider = config.get("model_provider") or "openai"
+            if not isinstance(self.effective_codex_provider, str):
+                self.error("Codex model_provider must be a string")
+            if self.binding_context:
+                if self.binding_context.get("provider") != self.effective_codex_provider:
+                    self.error("Model binding provider differs from the selected Codex configuration")
         model = config.get("model")
         if template:
             if any(key in config for key in CODEX_CONFIG_ROOT_KEYS):
@@ -462,6 +492,8 @@ class Validator:
                     self.error(f"duplicate Codex agent name: {actual_name}")
                 names.add(actual_name)
             model = values.get("model")
+            if not template and values.get("model_provider") not in (None, self.effective_codex_provider):
+                self.error(f"{filename} must inherit the selected provider, not override it")
             if template:
                 if model is not None:
                     self.error(f"{filename} template must not hard-code a model")
@@ -495,11 +527,32 @@ class Validator:
         self.validate_policies(path, CODEX_AGENTS_POLICIES, "Codex AGENTS")
 
     def validate_codex(self) -> None:
+        if self.runtime_context and not self.bindings_path:
+            self.error("--runtime-context requires --bindings")
+        if self.codex_profile and not self.codex_home:
+            self.error("--codex-profile requires --codex-home")
         try:
             policy = ROUTING.read_json(self.model_policy)
             ROUTING.validate_policy(policy)
             if self.bindings_path:
-                result = ROUTING.verify_binding(ROUTING.read_json(self.bindings_path), policy)
+                expected_context = None
+                if self.runtime_context:
+                    expected_context = ROUTING.read_json(self.runtime_context)
+                    if isinstance(expected_context, dict) and "context" in expected_context:
+                        expected_context = expected_context["context"]
+                    if not isinstance(expected_context, dict):
+                        raise ROUTING.RoutingError("Runtime context must contain a context object")
+                result = ROUTING.verify_binding(ROUTING.read_json(self.bindings_path), policy, expected_context=expected_context)
+                self.binding_context = result.get("context")
+                if self.binding_context and self.codex_home:
+                    if Path(self.binding_context.get("codex_home", "")).resolve() != self.codex_home:
+                        raise ROUTING.RoutingError("Model binding belongs to a different CODEX_HOME")
+                    if self.binding_context.get("profile") != self.codex_profile:
+                        raise ROUTING.RoutingError("Model binding profile differs; select the matching --codex-profile")
+                    if not self.runtime_context:
+                        self.warnings.append("Current auth/endpoint/executable identity is unverified; pass a fresh --runtime-context for full context comparison")
+                elif self.codex_home:
+                    self.warnings.append("Binding has no runtime context; host/auth/provider identity remains unverified")
                 if result["unresolved"]:
                     raise ROUTING.RoutingError("Installed configuration requires the controller (unless preserved) and all five subagent bindings")
                 self.bindings = result["bindings"]
@@ -703,6 +756,8 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--bindings", type=Path, help="fresh model-bindings.json from resolve_models.py")
     parser.add_argument("--model-policy", type=Path, help="policy used to resolve the supplied binding")
+    parser.add_argument("--codex-profile", help="named profile in the selected Codex home")
+    parser.add_argument("--runtime-context", type=Path, help="fresh discovery catalog/context to compare with the binding")
     parser.add_argument("--codex-rules", type=Path, help="project-root AGENTS.md when Codex home is project/.codex")
     return parser.parse_args()
 
@@ -710,4 +765,4 @@ def parse_args() -> argparse.Namespace:
 if __name__ == "__main__":
     arguments = parse_args()
     installed_skill = Path(__file__).resolve().parents[1]
-    raise SystemExit(Validator(arguments.repo, installed_skill, arguments.codex_home, arguments.claude_home, arguments.bindings, arguments.model_policy, arguments.codex_rules).run())
+    raise SystemExit(Validator(arguments.repo, installed_skill, arguments.codex_home, arguments.claude_home, arguments.bindings, arguments.model_policy, arguments.codex_rules, arguments.codex_profile, arguments.runtime_context).run())

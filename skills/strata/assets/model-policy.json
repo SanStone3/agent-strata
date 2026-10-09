@@ -70,5 +70,13 @@
     "tier": "deep",
     "effort": "xhigh",
     "sandbox": "inherited"
+  },
+  "role_preferences": {
+    "scout": [
+      "gpt-5.6-luna"
+    ],
+    "executor": [
+      "gpt-5.6-luna"
+    ]
   }
 }

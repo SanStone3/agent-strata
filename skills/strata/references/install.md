@@ -17,6 +17,8 @@ Use this reference only when installing, upgrading, or changing scope.
 
 Codex's current official personal skill location is `~/.agents/skills/`. Existing environments may also expose legacy or installer-managed locations. Use the active client's discovery output rather than relocating a working install without need.
 
+A shared personal package at `~/.agents/skills/strata/` can serve CLI and IDE instances on the same machine when both discover that location. Custom role definitions, config and bindings instead belong to each client's **actual** `CODEX_HOME`, which may differ from `~/.codex`. Confirm discovery through each matching client's `skills/list`; do not assume the VS Code extension uses the shell's home or executable. See [auth-context.md](auth-context.md).
+
 ## Safe merge procedure
 
 1. Identify the home directory or repository root explicitly. Never use an unresolved variable as a destructive target.

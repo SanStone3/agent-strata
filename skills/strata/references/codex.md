@@ -9,8 +9,8 @@ Read [model-routing.md](model-routing.md) before resolving or dispatching models
 | Agent | Capability tier | Effort | Mode | Use |
 |---|---|---|---|---|
 | Primary controller | strongest eligible deep tier (explicit pin takes precedence) | `xhigh` | inherited session | Goal ownership, decomposition, integration |
-| `scout` | efficient | `medium` | read-only | Locate paths, dependencies, evidence |
-| `executor` | efficient | `medium` | workspace-write | Exact mechanical operations |
+| `scout` | efficient; eligible GPT-5.6 preferred | `medium` | read-only | Locate paths, dependencies, evidence |
+| `executor` | efficient; eligible GPT-5.6 preferred | `medium` | workspace-write | Exact mechanical operations |
 | `worker` | balanced | `xhigh` | workspace-write | Ordinary bounded implementation |
 | `deep_worker` | deep | `xhigh` | workspace-write | Complex/high-risk implementation |
 | `reviewer` | deep | `xhigh` | read-only | Consequential final review |

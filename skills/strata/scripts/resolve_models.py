@@ -5,9 +5,12 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
+import os
 import queue
 import re
 import shutil
+import socket
 import subprocess
 import sys
 import threading
@@ -40,6 +43,40 @@ def utc_now():
 
 def digest(value):
     return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+
+
+def normalize_context(context):
+    """Only retain the non-secret discovery identity, never raw RPC results."""
+    if context is None:
+        return None
+    required = {"schema_version", "host", "executable", "client_version", "codex_home",
+                "cwd", "profile", "provider", "auth_mode", "auth_source"}
+    if (not isinstance(context, dict) or set(context) - required - {"endpoint_fingerprint"}
+            or not required.issubset(context) or type(context["schema_version"]) is not int
+            or context["schema_version"] != 1):
+        raise RoutingError("Invalid discovery context schema")
+    for key in required - {"schema_version", "profile"}:
+        value = context[key]
+        if not isinstance(value, str) or not value or len(value) > 4096 or any(ord(c) < 32 for c in value):
+            raise RoutingError(f"Invalid discovery context field: {key}")
+    profile = context["profile"]
+    if profile is not None and (not isinstance(profile, str) or not profile or len(profile) > 256
+                                or any(ord(c) < 32 for c in profile)):
+        raise RoutingError("Invalid discovery context profile")
+    for key in ("executable", "codex_home", "cwd"):
+        if not Path(context[key]).is_absolute():
+            raise RoutingError(f"Discovery context path must be absolute: {key}")
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", context["provider"]):
+        raise RoutingError("Invalid discovery context provider")
+    if context["auth_mode"] not in ("chatgpt", "api-key", "unknown"):
+        raise RoutingError("Invalid discovery context auth mode")
+    if context["auth_source"] not in ("account/read", "login-status", "unknown"):
+        raise RoutingError("Invalid discovery context auth source")
+    fingerprint = context.get("endpoint_fingerprint")
+    if "endpoint_fingerprint" in context and (not isinstance(fingerprint, str)
+                                             or not re.fullmatch(r"[0-9a-f]{64}", fingerprint)):
+        raise RoutingError("Invalid discovery endpoint fingerprint")
+    return dict(context)
 
 
 def read_json(path):
@@ -129,7 +166,7 @@ def validate_policy(policy):
             re.compile(rule["pattern"])
         except (KeyError, TypeError, re.error) as exc:
             raise RoutingError("Invalid family pattern") from exc
-    for key in ("models", "pins"):
+    for key in ("models", "pins", "role_preferences"):
         if not isinstance(policy.get(key, {}), dict):
             raise RoutingError(f"Policy {key} must be an object")
     for model, info in policy.get("models", {}).items():
@@ -138,6 +175,12 @@ def validate_policy(policy):
     for role, model in policy.get("pins", {}).items():
         if role not in ALL_ROLES or not isinstance(model, str) or not model:
             raise RoutingError("Invalid role pin")
+    for role, preferences in policy.get("role_preferences", {}).items():
+        if (role not in ROLES or not isinstance(preferences, list) or not preferences
+                or any(not isinstance(name, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:/-]*", name)
+                       for name in preferences)
+                or len(set(preferences)) != len(preferences)):
+            raise RoutingError("Role preferences require a stable subagent role and nonempty unique model identifiers")
 
 
 def classifications(models, policy):
@@ -193,6 +236,7 @@ def resolve(payload, policy, *, pins=None, excluded=(), allowed=None, modalities
         raise RoutingError("Catalog must be an object")
     if payload.get("captured_at"):
         check_age(payload["captured_at"])
+    context = normalize_context(payload.get("context"))
     models = normalize_catalog(payload)
     known = classifications(models, policy)
     selected_pins = dict(policy.get("pins", {}))
@@ -223,7 +267,9 @@ def resolve(payload, policy, *, pins=None, excluded=(), allowed=None, modalities
             elif info["tier"] != tier:
                 continue
             candidates.append(name)
-        candidates.sort(key=lambda n: (known[n]["rank"], models[n]["isDefault"], n), reverse=True)
+        preferences = policy.get("role_preferences", {}).get(role, [])
+        preference_rank = {name: len(preferences) - index for index, name in enumerate(preferences)}
+        candidates.sort(key=lambda n: (preference_rank.get(n, 0), known[n]["rank"], models[n]["isDefault"], n), reverse=True)
         if not candidates:
             unresolved[role] = "Pinned model does not meet the catalog/policy constraints" if pin else f"No eligible {tier} model supporting {effort}"
             continue
@@ -234,6 +280,7 @@ def resolve(payload, policy, *, pins=None, excluded=(), allowed=None, modalities
     return {"schema_version": 1, "generated_at": utc_now(),
             "catalog_captured_at": payload.get("captured_at"),
             "catalog_source": payload.get("source", "supplied catalog"),
+            "context": context, "context_sha256": digest(context),
             "catalog_sha256": digest(models), "policy_sha256": digest(policy),
             "catalog": list(models.values()), "bindings": bindings, "unresolved": unresolved,
             "constraints": {"pins": selected_pins, "excluded": sorted(excluded),
@@ -245,7 +292,7 @@ def resolve(payload, policy, *, pins=None, excluded=(), allowed=None, modalities
                          "Use only with the same host, account, provider and calling tool; refresh after any change."]}
 
 
-def verify_binding(document, policy):
+def verify_binding(document, policy, expected_context=None):
     """Recompute a saved binding; do not trust edited role models or effort fields."""
     if not isinstance(document, dict) or document.get("schema_version") != 1:
         raise RoutingError("Unsupported binding schema")
@@ -253,48 +300,185 @@ def verify_binding(document, policy):
     constraints = document.get("constraints")
     if not isinstance(constraints, dict):
         raise RoutingError("Binding constraints are missing")
-    payload = {"models": document.get("catalog"), "captured_at": document.get("catalog_captured_at")}
+    payload = {"models": document.get("catalog"), "captured_at": document.get("catalog_captured_at"),
+               "source": document.get("catalog_source", "supplied catalog"), "context": document.get("context")}
     result = resolve(payload, policy, **constraints)
-    for key in ("catalog_sha256", "policy_sha256", "bindings", "unresolved"):
+    for key in ("catalog_sha256", "policy_sha256", "context_sha256", "bindings", "unresolved"):
         if result[key] != document.get(key):
             raise RoutingError(f"Binding no longer matches its catalog and policy: {key}")
+    if expected_context is not None and result["context"] != normalize_context(expected_context):
+        raise RoutingError("Binding discovery context differs from the expected runtime context")
+    if document.get("access_verified") is not False:
+        raise RoutingError("Model discovery cannot verify inference access")
     return result
 
 
-def discover(codex="codex", timeout=20):
-    """Read all model/list pages through a short-lived, non-inference app-server."""
+def _stop_process(process, thread):
+    if process.poll() is None:
+        try:
+            process.terminate()
+        except ProcessLookupError:
+            pass
+    try:
+        process.wait(timeout=2)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait(timeout=2)
+    thread.join(timeout=2)
+    for stream in (process.stdin, process.stdout):
+        if stream is not None:
+            try:
+                stream.close()
+            except OSError:
+                pass
+
+
+def _capture_status(command, env, cwd, timeout):
+    """Bound both output and time; status output may contain credentials."""
     if timeout <= 0:
-        raise RoutingError("Discovery timeout must be positive")
-    messages = queue.Queue()
-    process = subprocess.Popen([codex, "app-server", "--listen", "stdio://"],
-                               stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                               stderr=subprocess.DEVNULL, text=True, encoding="utf-8")
+        return None
+    try:
+        process = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                                   stderr=subprocess.STDOUT, env=env, cwd=cwd)
+    except OSError:
+        return None
+    output, finished, invalid = bytearray(), threading.Event(), threading.Event()
 
     def reader():
         try:
             while True:
-                line = process.stdout.readline(1_048_577)
-                if not line:
+                chunk = process.stdout.read(4096)
+                if not chunk:
                     break
-                if len(line) > 1_048_576:
-                    messages.put(RoutingError("Oversized app-server response"))
-                    return
-                messages.put(line)
+                if len(output) + len(chunk) > 16384:
+                    invalid.set()
+                    break
+                output.extend(chunk)
+        except OSError:
+            invalid.set()
         finally:
-            messages.put(None)
+            finished.set()
 
     thread = threading.Thread(target=reader, daemon=True)
     thread.start()
     deadline = time.monotonic() + timeout
+    try:
+        if not finished.wait(timeout) or invalid.is_set():
+            return None
+        try:
+            if process.wait(timeout=max(0, deadline - time.monotonic())) != 0:
+                return None
+        except subprocess.TimeoutExpired:
+            return None
+        return output.decode("utf-8", errors="replace")
+    finally:
+        _stop_process(process, thread)
+
+
+def _provider_context(result):
+    config = result.get("config") if isinstance(result, dict) else None
+    if not isinstance(config, dict):
+        return "unknown", None
+    provider = config.get("model_provider", config.get("modelProvider"))
+    if provider is None:
+        provider = "openai"
+    if not isinstance(provider, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", provider):
+        return "unknown", None
+    providers = config.get("model_providers", config.get("modelProviders", {}))
+    selected = providers.get(provider) if isinstance(providers, dict) else None
+    endpoint = selected.get("base_url", selected.get("baseUrl")) if isinstance(selected, dict) else None
+    fingerprint = hashlib.sha256(endpoint.encode()).hexdigest() if isinstance(endpoint, str) and endpoint else None
+    return provider, fingerprint
+
+
+def _account_auth(result):
+    account = result.get("account") if isinstance(result, dict) else None
+    kind = account.get("type") if isinstance(account, dict) else None
+    return {"chatgpt": "chatgpt", "apiKey": "api-key", "api-key": "api-key"}.get(kind, "unknown") if isinstance(kind, str) else "unknown"
+
+
+def discover(codex="codex", timeout=20, codex_home=None, cwd=None, profile=None,
+             expected_auth=None, expected_provider=None):
+    """Read models and identity through the selected client without inference/login."""
+    if not isinstance(timeout, (int, float)) or not math.isfinite(timeout) or timeout <= 0:
+        raise RoutingError("Discovery timeout must be positive")
+    if expected_auth not in (None, "chatgpt", "api-key"):
+        raise RoutingError("Expected auth must be chatgpt or api-key")
+    if expected_provider is not None and (not isinstance(expected_provider, str)
+            or expected_provider == "unknown" or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", expected_provider)):
+        raise RoutingError("Expected provider must be a known provider identifier")
+    env = os.environ.copy()
+    target_cwd = Path(cwd or Path.cwd()).expanduser().resolve()
+    if not target_cwd.is_dir():
+        raise RoutingError("Discovery working directory does not exist")
+    home = Path(codex_home if codex_home is not None else env.get("CODEX_HOME") or Path.home() / ".codex").expanduser()
+    home = (target_cwd / home).resolve()
+    env["CODEX_HOME"] = str(home)
+    # Resolve relative PATH entries against the requested working directory too.
+    search_path = os.pathsep.join(str((target_cwd / entry).resolve())
+                                 for entry in env.get("PATH", os.defpath).split(os.pathsep))
+    command = os.path.expanduser(os.fspath(codex))
+    if os.path.dirname(command):
+        command = str(target_cwd / command)
+    executable = shutil.which(command, path=search_path)
+    if executable is None:
+        raise RoutingError("Codex executable not found or not executable")
+    executable = str(Path(executable).resolve())
+    context = {"schema_version": 1, "host": socket.gethostname(), "executable": executable,
+               "client_version": "unknown", "codex_home": str(home), "cwd": str(target_cwd),
+               "profile": profile, "provider": "unknown", "auth_mode": "unknown", "auth_source": "unknown"}
+    normalize_context(context)
+    base_command = [executable] + (["--profile", profile] if profile is not None else [])
+    deadline = time.monotonic() + timeout
+    version_output = _capture_status(base_command + ["--version"], env, str(target_cwd), min(2, timeout / 4))
+    if version_output is not None:
+        match = re.search(r"(?m)^codex(?:-cli)? ([0-9]+\.[0-9]+\.[0-9]+(?:[-+][A-Za-z0-9._-]+)?)\s*$", version_output)
+        if match:
+            context["client_version"] = match[1]
+    messages, stopped = queue.Queue(maxsize=64), threading.Event()
+    process = subprocess.Popen(base_command + ["app-server", "--listen", "stdio://"],
+                               stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                               stderr=subprocess.DEVNULL, text=True, encoding="utf-8",
+                               env=env, cwd=str(target_cwd))
+
+    def enqueue(value):
+        while not stopped.is_set():
+            try:
+                messages.put(value, timeout=0.05)
+                return
+            except queue.Full:
+                pass
+
+    def reader():
+        try:
+            while not stopped.is_set():
+                line = process.stdout.readline(1_048_577)
+                if not line:
+                    break
+                if len(line) > 1_048_576:
+                    enqueue(RoutingError("Oversized app-server response"))
+                    return
+                enqueue(line)
+        except (OSError, UnicodeError):
+            enqueue(RoutingError("Invalid app-server output"))
+        finally:
+            enqueue(None)
+
+    thread = threading.Thread(target=reader, daemon=True)
+    thread.start()
 
     def send(message):
-        process.stdin.write(json.dumps(message) + "\n")
-        process.stdin.flush()
+        try:
+            process.stdin.write(json.dumps(message) + "\n")
+            process.stdin.flush()
+        except OSError as exc:
+            raise RoutingError("App-server input closed during discovery") from exc
 
-    def request(number, method, params):
+    def request(number, method, params, request_timeout=None):
+        request_deadline = deadline if request_timeout is None else min(deadline, time.monotonic() + request_timeout)
         send({"id": number, "method": method, "params": params})
         for _ in range(10000):
-            remaining = deadline - time.monotonic()
+            remaining = request_deadline - time.monotonic()
             if remaining <= 0:
                 raise RoutingError("Model discovery timed out")
             try:
@@ -321,6 +505,12 @@ def discover(codex="codex", timeout=20):
             return result
         raise RoutingError("Too many app-server notifications")
 
+    def optional_request(number, method, params):
+        try:
+            return request(number, method, params, min(2, max(0, deadline - time.monotonic()) / 3))
+        except RoutingError:
+            return None
+
     try:
         request(1, "initialize", {"clientInfo": {"name": "agent_strata", "version": "2.0.0"}, "capabilities": {}})
         send({"method": "initialized", "params": {}})
@@ -335,24 +525,44 @@ def discover(codex="codex", timeout=20):
             rows.extend(result["data"])
             cursor = result.get("nextCursor")
             if cursor is None:
-                payload = {"data": rows, "source": "codex app-server model/list", "captured_at": utc_now()}
-                normalize_catalog(payload)
-                return payload
+                break
             if not isinstance(cursor, str) or not cursor or cursor in seen:
                 raise RoutingError("Invalid or repeated model/list cursor")
             seen.add(cursor)
-        raise RoutingError("Model catalog exceeded pagination limit")
+        else:
+            raise RoutingError("Model catalog exceeded pagination limit")
+        config = optional_request(102, "config/read", {"includeLayers": False})
+        context["provider"], fingerprint = _provider_context(config)
+        if fingerprint is not None:
+            context["endpoint_fingerprint"] = fingerprint
+        account = optional_request(103, "account/read", {"refreshToken": False})
+        context["auth_mode"] = _account_auth(account)
+        if context["auth_mode"] != "unknown":
+            context["auth_source"] = "account/read"
     finally:
-        if process.poll() is None:
-            process.terminate()
-        try:
-            process.wait(timeout=2)
-        except subprocess.TimeoutExpired:
-            process.kill()
-            process.wait(timeout=2)
-        thread.join(timeout=2)
-        process.stdin.close()
-        process.stdout.close()
+        stopped.set()
+        _stop_process(process, thread)
+    if context["auth_mode"] == "unknown":
+        status = _capture_status(base_command + ["login", "status"], env, str(target_cwd),
+                                 min(2, max(0, deadline - time.monotonic())))
+        if status is not None:
+            # Classify only known status lines; never store or print the output/key.
+            modes = set()
+            if re.search(r"(?mi)^Logged in using ChatGPT\s*$", status):
+                modes.add("chatgpt")
+            if re.search(r"(?mi)^Logged in using an API key(?:\s*[-:].*)?\s*$", status):
+                modes.add("api-key")
+            if len(modes) == 1:
+                context["auth_mode"] = modes.pop()
+                context["auth_source"] = "login-status"
+    if expected_auth is not None and context["auth_mode"] != expected_auth:
+        raise RoutingError("Discovery authentication does not match expected auth (or is unknown)")
+    if expected_provider is not None and context["provider"] != expected_provider:
+        raise RoutingError("Discovery provider does not match expected provider (or is unknown)")
+    payload = {"data": rows, "source": "codex app-server model/list", "captured_at": utc_now(),
+               "context": normalize_context(context), "access_verified": False}
+    normalize_catalog(payload)
+    return payload
 
 
 def render(document, directory, skill=SKILL):
@@ -391,6 +601,11 @@ def main(argv=None):
     source.add_argument("--catalog", type=Path, help="complete model/list JSON or tool-derived catalog")
     source.add_argument("--discover", action="store_true", help="read model/list; never starts inference")
     parser.add_argument("--codex", default="codex", help="Codex executable for discovery")
+    parser.add_argument("--codex-home", type=Path, help="Codex home for discovery; inherited environment is preserved")
+    parser.add_argument("--cwd", type=Path, help="working directory for the selected Codex client")
+    parser.add_argument("--profile", help="selected Codex configuration profile")
+    parser.add_argument("--expected-auth", choices=("chatgpt", "api-key"), help="fail unless stored auth is identified as expected")
+    parser.add_argument("--expected-provider", help="fail unless the effective provider matches")
     parser.add_argument("--timeout", type=float, default=20)
     parser.add_argument("--policy", type=Path, default=SKILL / "assets/model-policy.json")
     parser.add_argument("--pin", action="append", default=[], metavar="ROLE=MODEL")
@@ -409,7 +624,12 @@ def main(argv=None):
             if not separator or role not in ALL_ROLES or not model or role in pins:
                 raise RoutingError("Pins must be unique ROLE=MODEL pairs")
             pins[role] = model
-        payload = discover(args.codex, args.timeout) if args.discover else read_json(args.catalog)
+        if not args.discover and any(value is not None for value in (
+                args.codex_home, args.cwd, args.profile, args.expected_auth, args.expected_provider)):
+            raise RoutingError("Discovery target and expected-auth/provider options require --discover")
+        payload = discover(args.codex, args.timeout, codex_home=args.codex_home, cwd=args.cwd,
+                           profile=args.profile, expected_auth=args.expected_auth,
+                           expected_provider=args.expected_provider) if args.discover else read_json(args.catalog)
         result = resolve(payload, read_json(args.policy), pins=pins, excluded=args.exclude,
                          allowed=args.allowed_model, modalities=args.require_modality, preserve_primary=args.preserve_primary)
         if args.output_dir:

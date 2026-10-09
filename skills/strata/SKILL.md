@@ -10,9 +10,10 @@ Keep one primary controller responsible for the complete objective, authorizatio
 ## Select the mode
 
 - For installation or configuration, read [references/install.md](references/install.md), then read only the provider reference requested: [references/codex.md](references/codex.md) or [references/claude.md](references/claude.md).
-- For live task orchestration, read [references/task-contract.md](references/task-contract.md). For Codex, also read [references/model-routing.md](references/model-routing.md) before the first delegation.
+- For live task orchestration, use the fast path below. Read [references/task-contract.md](references/task-contract.md) for task-packet details when planning writes or multiple workstreams. Read [references/model-routing.md](references/model-routing.md) when model IDs must be selected, bindings are missing/stale, or the runtime disagrees with the installed roles.
 - For Codex model discovery, upgrades, pins, binding generation or unavailable-model recovery, read [references/model-routing.md](references/model-routing.md).
 - When one writer or three active agents are not enough, when a parallel wave must be planned, or when a client refuses a spawn, read [references/scaling.md](references/scaling.md).
+- For mixed ChatGPT/API-key logins, alternate `CODEX_HOME`, VS Code, remote SSH, or provider/profile changes, read [references/auth-context.md](references/auth-context.md).
 - For an audit, upgrade, troubleshooting, or handoff, read [references/validation.md](references/validation.md).
 
 When both providers are requested, configure them as two independent clients. Never create a Codex-to-Claude or Claude-to-Codex invocation path.
@@ -32,12 +33,14 @@ When both providers are requested, configure them as two independent clients. Ne
 
 ## Route live work
 
-For Codex, resolve the stable roles against the current native tool catalog using `scripts/resolve_models.py`; use its selected model and effort explicitly, or a verified rendered installation when overrides are unavailable. Recommend the strongest eligible deep-tier model at `xhigh` for the primary controller. Honor an explicit `controller` pin or `--preserve-primary`; existing config alone is not a permanent pin when the user requests Strata defaults. Apply a new primary binding during an authorized installation/update, never by silently rewriting global config during an ordinary task. An active session may require a model-picker change or a new session; report a mismatch without claiming a live switch. Never dispatch model-free templates as if they were bound agents.
+Fast path: when the current native tool already exposes the installed role, model and effort, and the task fits that role, dispatch a compact packet directly within the current authentication context. Those live tool declarations are stronger evidence than an old saved catalog. Do not inspect helper source, run `--help`, discover every model, or reload all reference guides merely to dispatch a known role. For ambiguous model selection or missing roles, resolve against that same tool catalog using `scripts/resolve_models.py`; retain the result for this session. Use explicit overrides only when the tool supports them, otherwise use the verified named definition. Recommend the strongest eligible deep-tier model at `xhigh` for the primary controller. Honor an explicit `controller` pin or `--preserve-primary`; existing config alone is not a permanent pin when the user requests Strata defaults. Apply a new primary binding during an authorized installation/update, never by silently rewriting global config during an ordinary task. An active session may require a model-picker change or a new session; report a mismatch without claiming a live switch. Never dispatch model-free templates as if they were bound agents.
+
+Before delegating, use the executing client's own home, provider, profile, process environment and tool schema. A ChatGPT login in the CLI does not establish API-key access in an IDE extension. Share the skill package when appropriate, but keep role definitions and bindings scoped to each active `CODEX_HOME`. Resolve and execute within that same context; authentication, network and quota failures are not reasons to switch providers.
 
 Before delegating, classify the work:
 
-- Fast read-only discovery -> `scout` / `haiku-scout`.
-- Exact mechanical operation -> `executor` when using Codex; otherwise handle directly or use a tightly bounded worker.
+- Simple read-only discovery -> `scout` / `haiku-scout`. Codex prefers available GPT-5.6 Luna for this low-risk layer; complex cross-module analysis stays with the controller or a suitably bounded stronger role.
+- Exact mechanical operation -> `executor` (prefer eligible GPT-5.6 Luna) when using Codex; otherwise handle directly or use a tightly bounded worker.
 - Ordinary bounded implementation -> `worker` / `sonnet-worker` at `xhigh`.
 - Cross-module, ambiguous, security-sensitive, concurrency-sensitive, lifecycle-sensitive, migration-sensitive, or expensive-to-rework implementation -> `deep_worker` / `opus-worker` at `xhigh`.
 - Consequential final review -> `reviewer` / `opus-reviewer` at `xhigh`.

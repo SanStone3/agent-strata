@@ -23,6 +23,8 @@ This is an illustrative one-role catalog, not a default allowlist. Include every
 
 If the current tool does not expose a catalog and the matching CLI is available, use the resolver's short-lived app-server discovery. It sends only `initialize`, `initialized` and paginated `model/list`, then exits. It never sends `thread/start` or `turn/start`, reads credentials directly, starts inference, or changes client configuration. Its catalog can be bundled/cached: access remains unverified until an authorized task successfully runs. Do not launch a second inference client to bypass a native tool restriction.
 
+For account/API-key coexistence and remote shells, read [auth-context.md](auth-context.md). Discovery supports `--codex-home`, `--cwd`, `--profile`, `--expected-auth` and `--expected-provider`; keep each generated binding with its own target. Preserve the target process's existing proxy and provider-key environment without printing or copying credentials.
+
 ## Resolve before dispatch
 
 Use Python 3.10+ (stdlib only; no API key or additional package required):
@@ -34,7 +36,7 @@ python3 scripts/resolve_models.py --discover --role worker
 
 Run from the installed skill directory, or prefix `scripts/` with its absolute path. `--codex /path/to/codex` selects the matching executable; `--timeout 20` bounds discovery including pagination. A model override requiring a compact packet/limited fork must not be combined with a full-history fork. Use the actual tool's parameter names: map `reasoning_effort` to `reasoning_effort`, `thinking`, or the documented equivalent; the JSON result is not itself a spawn request.
 
-The resolver returns bindings, alternatives, unresolved roles, unclassified models, policy/catalog fingerprints, capture time and `access_verified: false`. Exit codes: `0` means the requested role (or all roles when omitted) resolved; `2` means a valid catalog has unmet role constraints; `1` means invalid input, discovery failure, stale data or rendering failure. Never dispatch an unresolved role.
+The resolver returns bindings, alternatives, unresolved roles, unclassified models, policy/catalog fingerprints, non-secret execution context and its fingerprint, capture time and `access_verified: false`. Exit codes: `0` means the requested role (or all roles when omitted) resolved; `2` means a valid catalog has unmet role constraints; `1` means invalid input, discovery failure, stale data or rendering failure. Never dispatch an unresolved role.
 
 If combining a CLI catalog with a narrower calling-tool allowlist, repeat `--allowed-model MODEL` for the allowed IDs. Effort options must also agree: construct the input catalog from their intersection when the surfaces differ. `--require-modality image` requires explicit image metadata. An empty/failed discovery must not turn into an unconstrained allowlist.
 
@@ -47,11 +49,15 @@ python3 scripts/resolve_models.py --catalog /path/to/models.json \
   --pin worker=gpt-6-sol --role worker
 ```
 
+## Task-sensitive cost preferences
+
+`role_preferences` in the policy can put an older approved model first for a low-risk subagent role. The default prefers `gpt-5.6-luna` for `scout` and `executor`; it does not downgrade the controller, implementation workers or consequential review. Preferences rank only already-eligible candidates: pins, availability, supported effort, modality requirements, visibility and allowlists still win. If the preferred legacy model is unavailable, use a compatible same-tier candidate. Do not use a preferred low-cost role for work outside its task boundary. A user can customize these lists after validating the target provider.
+
 ## How adaptation works
 
 [../assets/model-policy.json](../assets/model-policy.json) is a Strata policy, not a Codex configuration file. The reviewed families classify efficiency, balanced implementation and deep reasoning. Future minor versions within those reviewed families are eligible when the current catalog lists them with the required effort. Numeric version comparison happens only after family classification; arbitrary newer names are never assumed stronger.
 
-Catalog `upgrade` links can carry a known role tier to a new successor name. Explicit policy classifications take precedence when a successor is already known. Cycles or conflicting inherited tiers stop resolution. Prefer the current reviewed lineage, newer numeric version and upgrade successor; use the catalog default as a tie-breaker. Hidden entries are eligible only through an explicit pin. Missing effort data does not prove support for `xhigh`.
+Catalog `upgrade` links can carry a known role tier to a new successor name. Explicit policy classifications take precedence when a successor is already known. Cycles or conflicting inherited tiers stop resolution. After role-specific preferences, prefer the current reviewed lineage, newer numeric version and upgrade successor; use the catalog default as a tie-breaker. Hidden entries are eligible only through an explicit pin. Missing effort data does not prove support for `xhigh`.
 
 The controller is resolved together with the five subagent roles. Use `--role controller` to inspect its recommendation, `--pin controller=MODEL` for an explicit primary choice, or `--preserve-primary` to exclude primary configuration from the output. A controller pin and preserve-primary are mutually exclusive. Existing model settings do not count as an intentional pin when the user requests the recommended setup; explicit user choices do. Primary and subagent catalogs can differ: resolve the controller against its own host/model-picker catalog before applying it.
 
@@ -70,6 +76,8 @@ When the tool only supports named agent definitions, use a rendered installation
 For an explicit unknown/unavailable-model or unsupported-effort rejection before execution: refresh the same surface once, add the rejected model with `--exclude MODEL`, resolve the same role again, and retry at most once using an eligible alternative. A pin stays unresolved rather than being replaced. No alternative means return the gap to the controller; it may complete the task locally if its existing model and permissions meet the task requirements.
 
 Authentication, payment/quota, rate limits, transport failures and task/test failures are not model-unavailability evidence. Do not rotate models to bypass them. A task failure can justify a newly bounded `deep_worker` packet after the controller inspects evidence, not automatic replay of the old worker.
+
+Encrypted reasoning or cross-region replay errors are also not model-unavailability evidence. Follow [auth-context.md](auth-context.md); if a history-free native child is already failing, surface the provider/client compatibility gap rather than cycling through models or declaring basic API connectivity equivalent to native delegation.
 
 If a failed task may have edited files or called external services, inspect actual state before any retry. Pass completed work and remaining scope in the new packet. Never blindly replay a writer, reset user changes, or loop over the candidate list. Report selected model/effort, reason for any switch and validation evidence; successful discovery alone is not an inference test.
 
@@ -100,7 +108,7 @@ python3 scripts/validate.py --codex-home /path/to/codex-home \
   --bindings /path/to/new-staging-dir/model-bindings.json
 ```
 
-For project scope, add `--codex-rules /path/to/project/AGENTS.md`. If a local policy was used, pass the same `--model-policy /path/to/policy.json`. The validator recomputes the binding against its captured catalog and policy, checks installed primary and subagent models/efforts against it, and rejects drift or stale snapshots. Without `--bindings`, installed validation reports that model compatibility is unverified. Neither mode proves account access, live tool compatibility, effective client precedence or inference success; verify those through the authorized native task.
+For project scope, add `--codex-rules /path/to/project/AGENTS.md`. If a local policy was used, pass the same `--model-policy /path/to/policy.json`. The validator recomputes the binding against its captured catalog and policy, checks target home/provider/profile and installed primary and subagent models/efforts against it, and rejects drift or stale snapshots. Without `--bindings`, installed validation reports that model compatibility is unverified. Neither mode proves account access, live tool compatibility, effective client precedence or inference success; verify those through the authorized native task.
 
 ## Sources
 

@@ -5,9 +5,11 @@ import copy
 import importlib.util
 import io
 import json
+import os
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -29,6 +31,14 @@ def catalog(*extra):
     )] + list(extra)}
 
 
+def discovery_context(**updates):
+    context = {"schema_version": 1, "host": "test-host", "executable": "/tmp/strata/codex",
+               "client_version": "0.161.0", "codex_home": "/tmp/strata/home", "cwd": "/tmp/strata/work",
+               "profile": None, "provider": "openai", "auth_mode": "chatgpt", "auth_source": "account/read"}
+    context.update(updates)
+    return context
+
+
 class RoutingTests(unittest.TestCase):
     def setUp(self):
         self.policy = R.read_json(SKILL / "assets/model-policy.json")
@@ -39,7 +49,7 @@ class RoutingTests(unittest.TestCase):
     def test_current_roles_and_efforts(self):
         doc = self.resolve()
         self.assertEqual({}, doc["unresolved"])
-        for role, name in {"scout": "gpt-6-luna", "executor": "gpt-6-luna", "worker": "gpt-6.1-sol",
+        for role, name in {"scout": "gpt-5.6-luna", "executor": "gpt-5.6-luna", "worker": "gpt-6.1-sol",
                            "deep_worker": "gpt-6-astra", "reviewer": "gpt-6-astra"}.items():
             self.assertEqual(name, doc["bindings"][role]["model"])
         self.assertFalse(doc["access_verified"])
@@ -136,6 +146,69 @@ class RoutingTests(unittest.TestCase):
         doc = self.resolve(pins={"worker": "gpt-6-sol"}, excluded=["gpt-6-sol"])
         self.assertIn("worker", doc["unresolved"])
 
+    def test_role_preferences_prioritize_ordered_eligible_models(self):
+        self.policy["role_preferences"] = {"scout": ["gpt-5.6-luna", "gpt-6-luna"],
+                                           "executor": ["gpt-5.6-luna"]}
+        doc = self.resolve()
+        for role in ("scout", "executor"):
+            self.assertEqual("gpt-5.6-luna", doc["bindings"][role]["model"])
+            self.assertEqual("medium", doc["bindings"][role]["reasoning_effort"])
+            self.assertFalse(doc["bindings"][role]["pinned"])
+        self.assertEqual(["gpt-6-luna"], doc["bindings"]["scout"]["alternatives"])
+        self.assertEqual("gpt-6-astra", doc["bindings"]["controller"]["model"])
+        self.assertFalse(doc["access_verified"])
+        self.assertEqual(doc["bindings"], R.verify_binding(doc, self.policy)["bindings"])
+        self.policy["role_preferences"]["scout"].reverse()
+        self.assertEqual("gpt-6-luna", self.resolve()["bindings"]["scout"]["model"])
+
+    def test_preferences_missing_hidden_incompatible_or_wrong_tier_fall_back(self):
+        self.policy["role_preferences"] = {"scout": ["gpt-5.6-luna"]}
+        for condition in ("missing", "hidden", "effort", "tier", "unclassified"):
+            payload = catalog()
+            if condition == "missing":
+                del payload["data"][0]
+            elif condition == "hidden":
+                payload["data"][0]["hidden"] = True
+            elif condition == "effort":
+                payload["data"][0]["supportedReasoningEfforts"] = ["high"]
+            elif condition == "tier":
+                self.policy["role_preferences"]["scout"] = ["gpt-5.6-sol"]
+            else:
+                self.policy["role_preferences"]["scout"] = ["unknown-model"]
+                payload["data"].append(model("unknown-model"))
+            with self.subTest(condition=condition):
+                self.assertEqual("gpt-6-luna", self.resolve(payload)["bindings"]["scout"]["model"])
+        self.policy["role_preferences"] = {"worker": ["gpt-5.6-terra"]}
+        payload = catalog()
+        payload["data"][1]["supportedReasoningEfforts"] = ["high"]
+        self.assertEqual("gpt-6.1-sol", self.resolve(payload)["bindings"]["worker"]["model"])
+
+    def test_preferences_obey_filters_and_pins(self):
+        self.policy["role_preferences"] = {"scout": ["gpt-5.6-luna"]}
+        for options in ({"allowed": ["gpt-6-luna"]}, {"excluded": ["gpt-5.6-luna"]},
+                        {"pins": {"scout": "gpt-6-luna"}}):
+            with self.subTest(options=options):
+                self.assertEqual("gpt-6-luna", self.resolve(**options)["bindings"]["scout"]["model"])
+        payload = catalog()
+        payload["data"][3]["inputModalities"] = ["image"]
+        self.assertEqual("gpt-6-luna", self.resolve(payload, modalities=["image"])["bindings"]["scout"]["model"])
+        self.policy["pins"]["scout"] = "gpt-6-luna"
+        self.assertEqual("gpt-6-luna", self.resolve()["bindings"]["scout"]["model"])
+
+    def test_absent_preferences_preserve_family_ranking(self):
+        self.policy.pop("role_preferences", None)
+        for role in ("scout", "executor"):
+            self.assertEqual("gpt-6-luna", self.resolve()["bindings"][role]["model"])
+
+    def test_malformed_role_preferences_rejected(self):
+        for preferences in (None, [], {"invalid": ["gpt-5.6-luna"]}, {"controller": ["gpt-5.6-sol"]},
+                            {"scout": "gpt-5.6-luna"}, {"scout": []}, {"scout": [""]},
+                            {"scout": [" "]}, {"scout": [42]}, {"scout": [{}]},
+                            {"scout": ["gpt-5.6-luna", "gpt-5.6-luna"]}):
+            self.policy["role_preferences"] = preferences
+            with self.subTest(preferences=preferences), self.assertRaisesRegex(R.RoutingError, "[Pp]references"):
+                self.resolve()
+
     def test_pin_cannot_lower_minimum_capability(self):
         self.assertIn("reviewer", self.resolve(pins={"reviewer": "gpt-6-luna"})["unresolved"])
 
@@ -212,6 +285,54 @@ class RoutingTests(unittest.TestCase):
         with self.assertRaisesRegex(R.RoutingError, "policy_sha256"):
             R.verify_binding(doc, self.policy)
 
+    def test_plain_catalog_has_no_invented_context(self):
+        doc = self.resolve()
+        self.assertIsNone(doc["context"])
+        self.assertEqual(R.digest(None), doc["context_sha256"])
+        self.assertIsNone(R.verify_binding(doc, self.policy)["context"])
+        with self.assertRaisesRegex(R.RoutingError, "context"):
+            R.verify_binding(doc, self.policy, expected_context=discovery_context())
+
+    def test_context_roundtrip_and_drift_detection(self):
+        payload = catalog()
+        payload["context"] = discovery_context(endpoint_fingerprint="a" * 64)
+        doc = self.resolve(payload)
+        saved = json.loads(json.dumps(doc))
+        self.assertEqual(payload["context"], R.verify_binding(saved, self.policy, payload["context"])["context"])
+        payload["context"]["host"] = "caller-mutated"
+        self.assertEqual("test-host", doc["context"]["host"])
+        for key, value in (("host", "different-host"), ("codex_home", "/tmp/other-home"),
+                           ("cwd", "/tmp/other-work"), ("profile", "api"), ("provider", "evolab"),
+                           ("executable", "/tmp/other-codex"), ("client_version", "0.162.0-alpha.1"),
+                           ("auth_mode", "api-key"), ("auth_source", "login-status"),
+                           ("endpoint_fingerprint", "b" * 64)):
+            changed = copy.deepcopy(doc)
+            changed["context"][key] = value
+            with self.subTest(key=key):
+                with self.assertRaisesRegex(R.RoutingError, "context_sha256"):
+                    R.verify_binding(changed, self.policy)
+                changed["context_sha256"] = R.digest(changed["context"])
+                with self.assertRaisesRegex(R.RoutingError, "expected runtime context"):
+                    R.verify_binding(changed, self.policy, expected_context=doc["context"])
+
+    def test_context_hash_and_access_claim_cannot_be_dropped_or_edited(self):
+        doc = self.resolve({**catalog(), "context": discovery_context()})
+        for key in ("context", "context_sha256"):
+            changed = copy.deepcopy(doc)
+            del changed[key]
+            with self.subTest(key=key), self.assertRaisesRegex(R.RoutingError, "context_sha256"):
+                R.verify_binding(changed, self.policy)
+        changed = copy.deepcopy(doc)
+        changed["access_verified"] = True
+        with self.assertRaisesRegex(R.RoutingError, "cannot verify"):
+            R.verify_binding(changed, self.policy)
+
+    def test_context_rejects_raw_account_or_config_fields(self):
+        for extra in ({"email": "private@example.invalid"}, {"headers": {"Authorization": "secret"}},
+                      {"endpoint_fingerprint": "https://secret.invalid"}, {"auth_mode": "other"}):
+            with self.subTest(extra=extra), self.assertRaises(R.RoutingError):
+                self.resolve({**catalog(), "context": discovery_context(**extra)})
+
     def test_render_complete_new_directory_only(self):
         with tempfile.TemporaryDirectory() as tmp:
             directory = Path(tmp) / "out"
@@ -255,24 +376,73 @@ class RoutingTests(unittest.TestCase):
             with contextlib.redirect_stderr(io.StringIO()):
                 self.assertEqual(1, R.main(["--catalog", str(path), "--pin", "worker=no", "--pin", "worker=other"]))
 
+    def test_cli_passes_discovery_target_and_guards(self):
+        with mock.patch.object(R, "discover", return_value=catalog()) as discover, contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(0, R.main(["--discover", "--codex", "/tmp/test-codex", "--timeout", "4",
+                                        "--codex-home", "/tmp/home", "--cwd", "/tmp/work", "--profile", "api",
+                                        "--expected-auth", "api-key", "--expected-provider", "evolab"]))
+        discover.assert_called_once_with("/tmp/test-codex", 4, codex_home=Path("/tmp/home"), cwd=Path("/tmp/work"),
+                                         profile="api", expected_auth="api-key", expected_provider="evolab")
+        with contextlib.redirect_stderr(io.StringIO()) as stderr:
+            self.assertEqual(1, R.main(["--catalog", "unused.json", "--expected-auth", "chatgpt"]))
+        self.assertIn("require --discover", stderr.getvalue())
 
-FAKE_SERVER = '''import json,sys,time
-mode=sys.argv[1]
+
+FAKE_SERVER = '''import json,os,signal,sys,time
+mode=os.environ['STRATA_TEST_MODE']
+def log(item):
+ with open(os.environ['STRATA_TEST_LOG'],'a') as stream:
+  stream.write(json.dumps(item)+'\\n')
+log({'argv':sys.argv[1:],'cwd':os.getcwd(),'home':os.environ.get('CODEX_HOME'),
+     'proxy':os.environ.get('HTTPS_PROXY'),'sentinel':os.environ.get('STRATA_TEST_SENTINEL')})
+if sys.argv[-1]=='--version':
+ if mode=='version_timeout': time.sleep(10)
+ if mode=='oversized_version': print('private-token'*2000,flush=True)
+ else: print('codex-cli 0.162.0-alpha.1',flush=True)
+ sys.exit(0)
+if sys.argv[-2:]==['login','status']:
+ if mode=='status_timeout': time.sleep(10)
+ if mode=='fallback_api': print('Logged in using an API key - sk-secret-login-key',file=sys.stderr)
+ elif mode=='unknown_auth':
+  print('Not logged in; private-diagnostic',file=sys.stderr); sys.exit(1)
+ else: print('Logged in using ChatGPT',file=sys.stderr)
+ sys.exit(0)
+assert sys.argv[-3:]==['app-server','--listen','stdio://']
+if mode=='ignore_term': signal.signal(signal.SIGTERM,signal.SIG_IGN)
 page=0
 for line in sys.stdin:
  msg=json.loads(line)
+ log({'rpc':msg})
  method=msg['method']
- if method not in ('initialize','initialized','model/list'):
+ if method not in ('initialize','initialized','model/list','config/read','account/read'):
   raise RuntimeError('Unexpected inference or mutation')
  if method=='initialized': continue
- if mode=='timeout': time.sleep(10); continue
+ if mode in ('timeout','ignore_term'): time.sleep(10); continue
  if method=='initialize': result={}
+ elif method=='config/read':
+  assert msg['params']=={'includeLayers':False}
+  if mode=='optional_timeout': time.sleep(10); continue
+  if mode=='config_error':
+   print(json.dumps({'id':msg['id'],'error':{'message':'secret-config-error'}}),flush=True); continue
+  if mode in ('api','fallback_api'):
+   result={'config':{'model_provider':'evolab','model_providers':{'evolab':{
+    'base_url':'https://secret-user:secret-password@example.invalid/v1?token=secret-endpoint',
+    'http_headers':{'Authorization':'secret-header'},'experimental_bearer_token':'secret-bearer'}}}}
+  else: result={'config':{}}
+ elif method=='account/read':
+  assert msg['params']=={'refreshToken':False}
+  if mode in ('fallback_chatgpt','fallback_api','unknown_auth','status_timeout'):
+   print(json.dumps({'id':msg['id'],'error':{'message':'secret-account-error'}}),flush=True); continue
+  result={'account':{'type':'apiKey' if mode=='api' else 'chatgpt',
+                     'email':'private-email@example.invalid','id':'private-account-id','apiKey':'secret-account-key'}}
  else:
   page+=1
   if mode=='rpc_error':
    print(json.dumps({'id':msg['id'],'error':{'code':-1}}),flush=True); continue
   if mode=='exit': sys.exit(0)
   if mode=='malformed': print('broken-json',flush=True); continue
+  if mode=='oversized': print('x'*1048577,flush=True); continue
+  if mode=='invalid_utf8': sys.stdout.buffer.write(b'\\xff\\n'); sys.stdout.buffer.flush(); continue
   if mode=='repeat': result={'data':[],'nextCursor':'same'}
   elif page==1:
    assert 'cursor' not in msg['params']
@@ -286,35 +456,148 @@ for line in sys.stdin:
 
 
 class DiscoveryTests(unittest.TestCase):
-    def discover(self, mode="ok", timeout=3):
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        self.root = Path(self.temporary.name).resolve()
+        self.home, self.work, self.bin = (self.root / name for name in ("home", "work", "bin"))
+        for directory in (self.home, self.work, self.bin):
+            directory.mkdir()
+        self.script = self.bin / "codex-real"
+        self.script.write_text("#!" + sys.executable + "\n" + FAKE_SERVER)
+        self.script.chmod(0o755)
+        (self.bin / "codex").symlink_to(self.script)
+        self.log = self.root / "calls.jsonl"
+
+    def discover(self, mode="ok", timeout=10, **options):
         real_popen = subprocess.Popen
-        with tempfile.TemporaryDirectory() as tmp:
-            script = Path(tmp) / "fake.py"
-            script.write_text(FAKE_SERVER)
-            processes = []
+        processes = []
 
-            def launch(command, **kwargs):
-                self.assertEqual(["codex", "app-server", "--listen", "stdio://"], command)
-                process = real_popen([sys.executable, str(script), mode], **kwargs)
-                processes.append(process)
-                return process
+        def launch(command, **kwargs):
+            self.assertEqual(str(self.script), command[0])
+            self.assertNotIn("shell", kwargs)
+            self.assertIsNot(kwargs["env"], os.environ)
+            process = real_popen(command, **kwargs)
+            processes.append(process)
+            return process
 
-            with mock.patch.object(R.subprocess, "Popen", side_effect=launch):
-                try:
-                    return R.discover(timeout=timeout)
-                finally:
-                    for process in processes:
-                        self.assertIsNotNone(process.poll(), "Discovery leaked its process")
+        env = {"STRATA_TEST_MODE": mode, "STRATA_TEST_LOG": str(self.log), "PATH": str(self.bin),
+               "CODEX_HOME": str(self.root / "inherited-home"), "HTTPS_PROXY": "http://test-proxy.invalid:9999",
+               "STRATA_TEST_SENTINEL": "inherited"}
+        target = {"codex_home": self.home, "cwd": self.work, **options}
+        with mock.patch.dict(os.environ, env), mock.patch.object(R.subprocess, "Popen", side_effect=launch):
+            before = dict(os.environ)
+            try:
+                return R.discover(timeout=timeout, **target)
+            finally:
+                self.assertEqual(before, dict(os.environ), "Discovery mutated global environment")
+                for process in processes:
+                    self.assertIsNotNone(process.poll(), "Discovery leaked its process")
+                    self.assertTrue(process.stdout.closed)
+                    if process.stdin is not None:
+                        self.assertTrue(process.stdin.closed)
+
+    def calls(self):
+        return [json.loads(line) for line in self.log.read_text().splitlines()]
 
     def test_protocol_and_all_pages(self):
         payload = self.discover()
         self.assertEqual(3, len(payload["data"]))
         self.assertIn("captured_at", payload)
+        self.assertFalse(payload["access_verified"])
+        self.assertEqual("chatgpt", payload["context"]["auth_mode"])
+        self.assertEqual("account/read", payload["context"]["auth_source"])
+        self.assertEqual("openai", payload["context"]["provider"])
+        methods = [item["rpc"]["method"] for item in self.calls() if "rpc" in item]
+        self.assertEqual(["initialize", "initialized", "model/list", "model/list", "config/read", "account/read"], methods)
+        self.assertEqual(2, sum("argv" in item for item in self.calls()))
+
+    def test_target_home_cwd_profile_executable_version_and_inherited_environment(self):
+        payload = self.discover(profile="api", expected_auth="chatgpt", expected_provider="openai")
+        context = payload["context"]
+        self.assertEqual(str(self.script), context["executable"])
+        self.assertEqual(str(self.home), context["codex_home"])
+        self.assertEqual(str(self.work), context["cwd"])
+        self.assertEqual("api", context["profile"])
+        self.assertEqual("0.162.0-alpha.1", context["client_version"])
+        commands = [item for item in self.calls() if "argv" in item]
+        self.assertEqual([["--profile", "api", "--version"],
+                          ["--profile", "api", "app-server", "--listen", "stdio://"]], [item["argv"] for item in commands])
+        for command in commands:
+            self.assertEqual(str(self.home), command["home"])
+            self.assertEqual(str(self.work), command["cwd"])
+            self.assertEqual("inherited", command["sentinel"])
+            self.assertEqual("http://test-proxy.invalid:9999", command["proxy"])
+
+    def test_inherited_and_relative_home_resolution(self):
+        self.assertEqual(str(self.root / "inherited-home"), self.discover(codex_home=None)["context"]["codex_home"])
+        self.assertEqual(str(self.home), self.discover(codex_home="../home", codex="../bin/codex")["context"]["codex_home"])
+
+    def test_api_provider_fingerprint_contains_no_credentials(self):
+        payload = self.discover("api", expected_auth="api-key", expected_provider="evolab")
+        context = payload["context"]
+        self.assertEqual("api-key", context["auth_mode"])
+        endpoint = "https://secret-user:secret-password@example.invalid/v1?token=secret-endpoint"
+        self.assertEqual(R.hashlib.sha256(endpoint.encode()).hexdigest(), context["endpoint_fingerprint"])
+        policy = R.read_json(SKILL / "assets/model-policy.json")
+        serialized = json.dumps(R.resolve(payload, policy))
+        for secret in ("secret-", "private-", "example.invalid", "Authorization", "apiKey"):
+            self.assertNotIn(secret, serialized)
+
+    def test_login_status_fallback_uses_same_target_and_never_verifies_access(self):
+        for mode, expected in (("fallback_chatgpt", "chatgpt"), ("fallback_api", "api-key")):
+            with self.subTest(mode=mode):
+                payload = self.discover(mode, profile="stored", expected_auth=expected)
+                self.assertEqual(expected, payload["context"]["auth_mode"])
+                self.assertEqual("login-status", payload["context"]["auth_source"])
+                self.assertFalse(payload["access_verified"])
+                self.assertNotIn("secret", json.dumps(payload))
+                command = self.calls()[-1]
+                self.assertEqual(["--profile", "stored", "login", "status"], command["argv"])
+                self.assertEqual(str(self.home), command["home"])
+                self.assertEqual(str(self.work), command["cwd"])
+
+    def test_unknown_auth_and_provider_are_not_invented(self):
+        payload = self.discover("unknown_auth")
+        self.assertEqual("unknown", payload["context"]["auth_mode"])
+        self.assertEqual("unknown", payload["context"]["auth_source"])
+        payload = self.discover("config_error")
+        self.assertEqual("unknown", payload["context"]["provider"])
+
+    def test_expected_guards_fail_closed_and_hide_remote_errors(self):
+        for mode, options in (("ok", {"expected_auth": "api-key"}), ("unknown_auth", {"expected_auth": "chatgpt"}),
+                              ("api", {"expected_provider": "openai"}), ("config_error", {"expected_provider": "openai"})):
+            with self.subTest(mode=mode), self.assertRaises(R.RoutingError) as caught:
+                self.discover(mode, **options)
+            self.assertNotIn("secret", str(caught.exception))
+
+    def test_status_and_optional_reads_are_time_and_output_bounded(self):
+        for mode in ("version_timeout", "status_timeout", "oversized_version", "optional_timeout"):
+            start = time.monotonic()
+            with self.subTest(mode=mode):
+                payload = self.discover(mode, timeout=1)
+                self.assertLess(time.monotonic() - start, 3)
+                self.assertNotIn("private-", json.dumps(payload))
+                if mode in ("version_timeout", "oversized_version"):
+                    self.assertEqual("unknown", payload["context"]["client_version"])
+                elif mode == "status_timeout":
+                    self.assertEqual("unknown", payload["context"]["auth_mode"])
+                else:
+                    self.assertEqual("unknown", payload["context"]["provider"])
+
+    def test_invalid_target_is_rejected_before_starting_process(self):
+        for options in ({"timeout": 0}, {"timeout": float("nan")}, {"expected_auth": "other"},
+                        {"expected_provider": "unknown"}, {"profile": ""}, {"cwd": self.root / "absent"}):
+            with self.subTest(options=options), self.assertRaises(R.RoutingError):
+                self.discover(**options)
+        self.assertFalse(self.log.exists())
+        with self.assertRaisesRegex(R.RoutingError, "not found"):
+            R.discover(codex=str(self.root / "missing-codex"), cwd=self.work)
 
     def test_protocol_failures_and_process_cleanup(self):
-        for mode in ("rpc_error", "exit", "malformed", "repeat", "timeout"):
+        for mode in ("rpc_error", "exit", "malformed", "repeat", "timeout", "oversized", "invalid_utf8", "ignore_term"):
             with self.subTest(mode=mode), self.assertRaises(R.RoutingError):
-                self.discover(mode, timeout=0.3 if mode == "timeout" else 3)
+                self.discover(mode, timeout=0.3 if mode in ("timeout", "ignore_term") else 3)
 
 
 if __name__ == "__main__":

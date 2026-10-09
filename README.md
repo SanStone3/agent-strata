@@ -60,9 +60,15 @@ python3 skills/strata/scripts/resolve_models.py --discover
 python3 skills/strata/scripts/resolve_models.py --discover --output-dir /path/to/new-staging-dir
 ```
 
-当前已核验的策略将 GPT-6 Luna、GPT-6.1 Sol、GPT-6 Astra 分别作为效率、平衡、深度层候选；最终 ID 和 `xhigh` 支持取决于当前目录与工具限制。主控默认同样解析为最强可用深度层 + `xhigh`。支持 `--pin controller=MODEL` 固定选择，或 `--preserve-primary` 保留原主模型和 effort；上下文设置始终保留。仅列出模型不能证明账号访问权限。
+当前策略让简单探索和机械执行优先使用可用的 GPT-5.6 Luna；普通实现使用平衡层（当前为 GPT-6.1 Sol），复杂实现和审查使用深度层（当前为 GPT-6 Astra）。旧型号不可用时才选择兼容的同层候选；最终 ID 和 `xhigh` 支持取决于当前目录与工具限制。主控默认同样解析为最强可用深度层 + `xhigh`。支持 `--pin controller=MODEL` 固定选择，或 `--preserve-primary` 保留原主模型和 effort；上下文设置始终保留。仅列出模型不能证明账号访问权限。
 
 原生工具支持覆盖模型时，每次调用明确传入绑定；仅支持命名 Agent 的客户端需要合并生成的定义并在会话边界刷新。模板本身不含型号，不能直接当作已绑定配置安装。旧角色名有迁移映射，校验器不再强制 GPT-5.6。详见 [模型路由、升级与回退](skills/strata/references/model-routing.md)。
+
+## 账号登录与 API key 可以并存
+
+Strata 不管理登录，不读取或搬运凭据。Codex CLI 的账号登录与 IDE 扩展的 API key 登录分别使用各自的可执行文件、`CODEX_HOME`、provider、profile 和进程环境。目录相同不代表访问权限相同；解析结果记录非敏感上下文，并阻止跨配置目录复用。
+
+公共 skill 可放在 `~/.agents/skills/strata/`；模型绑定、原生 Agent 和配置仍分别放在每个入口的实际 `CODEX_HOME`。SSH shell 也要继承目标客户端所需的代理环境。详细命令、验证等级与故障处理见 [认证与运行上下文](skills/strata/references/auth-context.md)。
 
 ## 并发预算：3 不是天花板
 

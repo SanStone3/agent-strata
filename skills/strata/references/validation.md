@@ -30,6 +30,8 @@ This is read-only and checks only `/path/to/codex-home/config.toml`, its five st
 
 Use `--bindings /path/to/model-bindings.json` from a fresh resolver run to verify the controller and installed subagent models against catalog capabilities and the routing policy. Controller configuration drift is an error unless the binding was generated with `--preserve-primary`. Without it, availability/tier compatibility is explicitly unverified. For an external policy add `--model-policy /path/to/policy.json`; for project scope add `--codex-rules /path/to/project/AGENTS.md`. Source Codex templates must omit model IDs; installed definitions must contain resolved IDs. See [model-routing.md](model-routing.md) for discovery, rendering, migration and bounded recovery.
 
+For two Codex logins, run one check per actual home. A context-bound manifest from the account-login home must not validate an API-key home, even when both catalogs list identical model IDs. Use `--codex-profile NAME` for a named profile and `--runtime-context /path/to/fresh-discovery.json` to compare full current context. Profile files follow the current client contract: `<CODEX_HOME>/<name>.config.toml`. Older client formats require version-specific adaptation, not silent fallback.
+
 ## Explicit Claude home check
 
 To inspect an active Claude Code setup:

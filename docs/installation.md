@@ -119,6 +119,12 @@ Claude Code 会监视已存在的 skill 和 Agent 目录。若会话启动时目
 
 项目 `.claude/settings.json` 适合团队共享；个人试验与本机权限放在 `.claude/settings.local.json`，并确保它被忽略。
 
+## 同机两种登录方式
+
+公共 skill 安装到 `~/.agents/skills/strata/`，然后分别确认 CLI 和 IDE 的发现结果。Agent 定义与配置以各入口实际 `CODEX_HOME` 为准，不固定假设为 `~/.codex`。每个入口分别发现目录、生成绑定、备份合并、验证；不要复制 `auth.json`、退出账号登录，或给另一个入口写入 API key。
+
+完整示例见 [认证与运行上下文](../skills/strata/references/auth-context.md)。客户端当前能发起原生委派时，由主控自主分配有限任务包，子 Agent 继承同一入口的认证/provider；没有相应工具时应说明限制，而不是另开一个不同认证的客户端冒充原生子 Agent。
+
 ## 配置选择
 
 ### 推荐基线

@@ -322,6 +322,65 @@ status_line = ["model-name"]
         self.assertEqual(1, code)
         self.assertIn("primary model/effort differs from the controller binding", output)
 
+    def bind_context(self, *, home=None, provider="openai", profile=None):
+        context = {
+            "schema_version": 1, "host": "test-host", "executable": str(Path(self.temporary.name) / "codex"),
+            "client_version": "codex-cli test", "codex_home": str(home or self.codex_home),
+            "cwd": self.temporary.name, "profile": profile, "provider": provider,
+            "auth_mode": "chatgpt" if provider == "openai" else "api-key", "auth_source": "account/read",
+        }
+        policy = VALIDATE.ROUTING.read_json(self.skill / "assets/model-policy.json")
+        self.binding = VALIDATE.ROUTING.resolve({"models": self.binding["catalog"], "context": context}, policy)
+        self.bindings_path.write_text(json.dumps(self.binding))
+        return context
+
+    def test_binding_cannot_cross_codex_homes(self):
+        self.bind_context(home=Path(self.temporary.name) / "other-home")
+        code, output = self.validate(self.codex_home, bindings=self.bindings_path)
+        self.assertEqual(1, code)
+        self.assertIn("different CODEX_HOME", output)
+
+    def test_binding_cannot_cross_providers(self):
+        self.bind_context(provider="gateway")
+        code, output = self.validate(self.codex_home, bindings=self.bindings_path)
+        self.assertEqual(1, code)
+        self.assertIn("provider differs", output)
+
+    def test_matching_api_provider_binding_passes(self):
+        self.bind_context(provider="gateway")
+        config = self.codex_home / "config.toml"
+        config.write_text('model_provider = "gateway"\n' + config.read_text())
+        code, output = self.validate(self.codex_home, bindings=self.bindings_path)
+        self.assertEqual(0, code, output)
+        self.assertIn("Current auth/endpoint/executable identity is unverified", output)
+
+    def test_role_cannot_override_provider(self):
+        agent = self.codex_home / "agents/worker.toml"
+        agent.write_text('model_provider = "other-provider"\n' + agent.read_text())
+        code, output = self.validate(self.codex_home)
+        self.assertEqual(1, code)
+        self.assertIn("must inherit the selected provider", output)
+
+    def test_selected_profile_is_required_and_loaded(self):
+        self.bind_context(provider="gateway", profile="api")
+        (self.codex_home / "api.config.toml").write_text('model_provider = "gateway"\n')
+        code, output = self.validate(self.codex_home, bindings=self.bindings_path)
+        self.assertEqual(1, code)
+        self.assertIn("profile differs", output)
+        validator = VALIDATE.Validator(None, self.skill, self.codex_home, bindings=self.bindings_path, codex_profile="api")
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(0, validator.run(), validator.errors)
+
+    def test_live_context_detects_auth_surface_change(self):
+        context = self.bind_context()
+        context["auth_mode"] = "api-key"
+        runtime = Path(self.temporary.name) / "live-context.json"
+        runtime.write_text(json.dumps(context))
+        validator = VALIDATE.Validator(None, self.skill, self.codex_home, bindings=self.bindings_path, runtime_context=runtime)
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            self.assertEqual(1, validator.run())
+        self.assertTrue(any("context" in error.lower() for error in validator.errors))
+
     def test_installed_models_cannot_be_omitted(self) -> None:
         p = self.codex_home / "agents/worker.toml"
         p.write_text('\n'.join(line for line in p.read_text().splitlines() if not line.startswith('model =')))
