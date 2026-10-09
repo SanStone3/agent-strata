@@ -37,7 +37,7 @@ npx -y skills@1.5.23 add SanStone3/agent-strata \
 检查现有 ~/.codex/config.toml、~/.codex/agents 和全局 AGENTS.md；
 先备份，再读取当前目录、保留用户固定型号，按 skill 的模型路由流程生成绑定并增量合并。不要删除或覆盖现有项目、MCP、hooks、权限和其他模型配置。
 写代码的 Worker 必须使用 xhigh；保持默认并发预算（3 个子线程、1 个写入者），并核验实际生效的并行度。
-完成后带 --bindings 运行只读校验并显示实际变更。主控设为最强可用深度层 + xhigh，尊重明确固定选择，保留上下文配置。
+完成后带 --bindings 运行只读校验并显示实际变更。主控设为GPT-6.1 Sol + xhigh，尊重明确固定选择，保留上下文配置。
 ```
 
 在 Claude Code 中：
@@ -129,8 +129,8 @@ Claude Code 会监视已存在的 skill 和 Agent 目录。若会话启动时目
 
 ### 推荐基线
 
-- Codex 主会话：最强可用深度层 `controller` + `xhigh`；明确固定型号时用 `--pin controller=MODEL`，保留原主模型与 effort 时用 `--preserve-primary`；context 与 auto compact 始终保留。
-- Codex 默认子 Agent：当前目录解析出的 `worker` 模型，`xhigh`；Scout / Executor 为效率层 `medium`，复杂实现与审查为深度层 `xhigh`。
+- Codex 主会话：GPT-6.1 Sol `controller` + `xhigh`；明确固定型号时用 `--pin controller=MODEL`，保留原主模型与 effort 时用 `--preserve-primary`；context 与 auto compact 始终保留。
+- Codex 默认子 Agent：当前目录解析出的 `worker` 模型，`xhigh`；Scout / Executor 为效率层 `medium`，复杂实现与审查仍用 Sol `xhigh`。
 - Claude 默认主会话：`opus[1m]`，`xhigh`。
 - Claude 常规实现：Sonnet `xhigh`；复杂实现/审查：Opus `xhigh`。
 - Claude Fable：只作为显式 controller / worker / reviewer 使用。

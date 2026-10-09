@@ -4,7 +4,7 @@ Read this for Codex delegation, installation, model upgrades or unavailable-mode
 
 ## Stable roles and authoritative inputs
 
-The role names are `scout`, `executor`, `worker`, `deep_worker`, and `reviewer`. Their write boundaries and reasoning requirements do not change when models change. The separate `controller` binding defaults to the strongest eligible deep-tier model at `xhigh`. It configures the primary session, not a sixth subagent. Preserve context and auto-compact settings. This skill cannot switch an already-running primary model by editing a file.
+The role names are `scout`, `executor`, `worker`, `deep_worker`, and `reviewer`. Their write boundaries and reasoning requirements do not change when models change. The separate `controller` binding defaults to the reviewed GPT-6.1 Sol model at `xhigh`. It configures the primary session, not a sixth subagent. Preserve context and auto-compact settings. This skill cannot switch an already-running primary model by editing a file.
 
 Read the active native spawn tool's schema first. Its permitted model IDs, effort values, fork rules and host restrictions are authoritative for that call. A desktop app, CLI, API account and remote host can have different catalogs. Never assume API `/v1/models`, a local cache file, or a separate CLI process proves what the current spawn tool accepts.
 
@@ -51,7 +51,9 @@ python3 scripts/resolve_models.py --catalog /path/to/models.json \
 
 ## Task-sensitive cost preferences
 
-`role_preferences` in the policy can put an older approved model first for a low-risk subagent role. The default prefers `gpt-5.6-luna` for `scout` and `executor`; it does not downgrade the controller, implementation workers or consequential review. Preferences rank only already-eligible candidates: pins, availability, supported effort, modality requirements, visibility and allowlists still win. If the preferred legacy model is unavailable, use a compatible same-tier candidate. Do not use a preferred low-cost role for work outside its task boundary. A user can customize these lists after validating the target provider.
+The default `automatic_models` allowlist contains only `gpt-6.1-sol` and `gpt-6-luna`, whose pricing and role fit have been reviewed. Discovery can report other/newer models, but availability or a version number alone does not authorize automatic paid selection. Review price and capability before adding a new ID. An explicit user-approved pin bypasses the automatic list while retaining capability, effort, visibility and caller-allowlist checks. Missing approved models remain unresolved; never silently fall back to Astra or a legacy model.
+
+`role_preferences` orders eligible candidates only; it cannot bypass `automatic_models`. The default prefers GPT-6 Luna for scout/executor and Sol for implementation/review. These roles describe tasks, not claims that all model tiers have identical capability. See [cost-control.md](cost-control.md).
 
 ## How adaptation works
 
@@ -65,11 +67,11 @@ Automatic alternatives stay in the same capability tier. This is a capability po
 
 To classify an organization-approved full ID or a newly reviewed family, copy the policy outside the installed package, change only the necessary entries, and pass `--policy /path/to/policy.json`. An exact model entry under `models` needs `tier`, integer `priority`, and `evidence` (official source or organization approval). Do not fabricate evidence, parse marketing text as executable policy, or change the five role contracts. The policy fingerprint makes changes visible to the validator.
 
-Resolve once at first delegation, keep the binding stable for that session and refresh when the host/account/provider/tool changes, a model is explicitly unavailable, or the user requests an upgrade. Files older than 24 hours are rejected when capture time is present. Undated input is a caller-supplied snapshot that must be freshly obtained; no persistent cache is automatically reused. Do not schedule background updates or modify a running wave's assignments.
+Resolve once at first delegation, keep the binding stable for that session and refresh when the host/account/provider/tool changes, a model is explicitly unavailable, or the user requests an upgrade. Files older than 24 hours are rejected when capture time is present. Undated input is a caller-supplied snapshot that must be freshly obtained; no persistent cache is automatically reused. Do not schedule background updates or modify a running wave's assignments. Never change the model of an existing conversation/subagent; any escalation creates a new compact child packet.
 
 ## Dispatch and bounded recovery
 
-When native spawn accepts model and effort overrides, pass the binding explicitly along with the role's instructions and task packet. Supplying `sandbox_mode` in the binding describes the required boundary; apply it only through supported tool/config fields and keep read-only constraints in the packet. A result field never overrides the host's permissions.
+When creating a new native child and the spawn tool accepts model and effort overrides, pass the binding explicitly along with the role's instructions and task packet. Supplying `sandbox_mode` in the binding describes the required boundary; apply it only through supported tool/config fields and keep read-only constraints in the packet. A result field never overrides the host's permissions.
 
 When the tool only supports named agent definitions, use a rendered installation (below). A bare model-free template is not an adaptive installed agent: it would inherit an arbitrary parent/default. Do not claim runtime adaptation if the client cannot override the model or reload changed definitions. Regenerate the definitions at a session boundary, verify the active settings, and start a new session when needed. Full-history forks inherit the parent model when required by the tool; they cannot be used to implement mixed-model routing.
 

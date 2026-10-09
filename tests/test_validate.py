@@ -159,12 +159,12 @@ class ValidatorMutationTests(unittest.TestCase):
         code, output = self.validate(self.codex_home)
         self.assertEqual(0, code, output)
         config = self.codex_home / "config.toml"
-        config.write_text(config.read_text().replace('model = "gpt-6-astra"', 'model = "user-selected-model"').replace('model_reasoning_effort = "xhigh"', 'model_reasoning_effort = "high"'), encoding="utf-8")
+        config.write_text(config.read_text().replace('model = "gpt-6.1-sol"', 'model = "user-selected-model"').replace('model_reasoning_effort = "xhigh"', 'model_reasoning_effort = "high"'), encoding="utf-8")
         code, output = self.validate(self.codex_home)
         self.assertEqual(0, code, output)
-        config.write_text(config.read_text().replace("user-selected-model", "gpt-6-astra").replace('model_reasoning_effort = "high"', 'model_reasoning_effort = "xhigh"'))
+        config.write_text(config.read_text().replace("user-selected-model", "gpt-6.1-sol").replace('model_reasoning_effort = "high"', 'model_reasoning_effort = "xhigh"'))
         agent = self.codex_home / "agents/reviewer.toml"
-        agent.write_text(agent.read_text().replace("gpt-6-astra", "gpt-6-luna"))
+        agent.write_text(agent.read_text().replace("gpt-6.1-sol", "gpt-6-luna"))
         code, output = self.validate(self.codex_home, bindings=self.bindings_path)
         self.assertEqual(1, code)
         self.assertIn("reviewer.toml model differs from the reviewer binding", output)

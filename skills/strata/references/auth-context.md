@@ -81,6 +81,17 @@ The validator refuses a binding from a different home/provider/profile, detects 
 
 ## Failure classification and autonomous behavior
 
+For an API provider rejecting a parameter with an error such as `reasoning.summary is not supported`, inspect the exact target CODEX_HOME and back up its configuration. The compatibility settings belong at the TOML root, before the first table, not under `[agents]` or a provider table:
+
+```toml
+model_reasoning_summary = "none"
+model_supports_reasoning_summaries = false
+```
+
+Apply these only for a matching error or a provider's documented requirement, to the API-key context that needs them. With separate CLI and IDE homes, the IDE file may be `<IDE_CODEX_HOME>/config.toml`, not `~/.codex/config.toml`. Preserve auth, endpoint, model and requested reasoning effort; start a new test conversation and verify the outgoing request/effective effort. Summary visibility is not a measurement of reasoning tokens. The meaning of the support flag can vary by client/model; do not claim that a configured xhigh reached the provider without evidence. If the error persists, report the unsupported field rather than dropping all reasoning or switching credentials.
+
+A local transport-only probe of the inspected IDE backend (0.162.0-alpha.2, GPT-6.1 Sol) showed `reasoning.effort=xhigh` in the request with either `summary="none"` alone or both settings. Neither case sent a summary field. This confirms that client's request construction only, not provider inference quality or every version's behavior. See the [official configuration reference](https://learn.chatgpt.com/docs/config-file/config-reference).
+
 The controller should continue native orchestration autonomously when capability, scope and permissions are established. It should not ask for login merely because both login modes exist. Only request user action for an actual expired/revoked login, missing key, account/organization restriction or unresolved authority.
 
 - **Transport/proxy failure:** compare the target environment, repair only authorized configuration, then make a bounded retry. Do not change auth or models to hide a connection failure.

@@ -24,10 +24,10 @@ ROLES = {
     "scout": ("efficient", "medium", "read-only"),
     "executor": ("efficient", "medium", "workspace-write"),
     "worker": ("balanced", "xhigh", "workspace-write"),
-    "deep_worker": ("deep", "xhigh", "workspace-write"),
-    "reviewer": ("deep", "xhigh", "read-only"),
+    "deep_worker": ("balanced", "xhigh", "workspace-write"),
+    "reviewer": ("balanced", "xhigh", "read-only"),
 }
-CONTROLLER = {"controller": ("deep", "xhigh", "inherited")}
+CONTROLLER = {"controller": ("balanced", "xhigh", "inherited")}
 ALL_ROLES = {**CONTROLLER, **ROLES}
 ALIASES = {"luna_scout": "scout", "luna_executor": "executor",
            "terra_worker": "worker", "sol_worker": "deep_worker", "sol_reviewer": "reviewer"}
@@ -154,8 +154,13 @@ def validate_policy(policy):
     for role, (tier, effort, sandbox) in ROLES.items():
         if policy["roles"][role] != {"tier": tier, "effort": effort, "sandbox": sandbox}:
             raise RoutingError(f"Policy changes the capability/effort/sandbox contract for {role}")
-    if policy.get("controller") != {"tier": "deep", "effort": "xhigh", "sandbox": "inherited"}:
-        raise RoutingError("Policy must recommend a deep-tier xhigh controller")
+    if policy.get("controller") != {"tier": "balanced", "effort": "xhigh", "sandbox": "inherited"}:
+        raise RoutingError("Policy must recommend a balanced-tier xhigh controller")
+    automatic = policy.get("automatic_models")
+    if (not isinstance(automatic, list) or not automatic
+            or any(not isinstance(name, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:/-]*", name) for name in automatic)
+            or len(set(automatic)) != len(automatic)):
+        raise RoutingError("automatic_models must be a nonempty unique list of reviewed model IDs")
     families = policy.get("families")
     if not isinstance(families, list):
         raise RoutingError("Policy families must be an array")
@@ -255,6 +260,8 @@ def resolve(payload, policy, *, pins=None, excluded=(), allowed=None, modalities
         candidates = []
         for name, model in models.items():
             if name not in known or name in excluded or (allowed is not None and name not in allowed):
+                continue
+            if not pin and name not in policy["automatic_models"]:
                 continue
             info = known[name]
             if effort not in model["efforts"] or (model["hidden"] and name != pin):

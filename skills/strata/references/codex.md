@@ -8,12 +8,12 @@ Read [model-routing.md](model-routing.md) before resolving or dispatching models
 
 | Agent | Capability tier | Effort | Mode | Use |
 |---|---|---|---|---|
-| Primary controller | strongest eligible deep tier (explicit pin takes precedence) | `xhigh` | inherited session | Goal ownership, decomposition, integration |
-| `scout` | efficient; eligible GPT-5.6 preferred | `medium` | read-only | Locate paths, dependencies, evidence |
-| `executor` | efficient; eligible GPT-5.6 preferred | `medium` | workspace-write | Exact mechanical operations |
+| Primary controller | GPT-6.1 Sol recommendation (user choice takes precedence) | `xhigh` | inherited session | Goal ownership, decomposition, integration |
+| `scout` | efficient; GPT-6 Luna preferred | `medium` | read-only | Locate paths, dependencies, evidence |
+| `executor` | efficient; GPT-6 Luna preferred | `medium` | workspace-write | Exact mechanical operations |
 | `worker` | balanced | `xhigh` | workspace-write | Ordinary bounded implementation |
-| `deep_worker` | deep | `xhigh` | workspace-write | Complex/high-risk implementation |
-| `reviewer` | deep | `xhigh` | read-only | Consequential final review |
+| `deep_worker` | balanced (Sol), deeper task packet | `xhigh` | workspace-write | Complex/high-risk implementation |
+| `reviewer` | balanced (Sol), independent review | `xhigh` | read-only | Consequential final review |
 
 Runtime model and effort overrides must follow the current native tool schema and fork restrictions. If overrides are unavailable, resolve and render definitions, merge them during installation/update, then verify client reload before dispatch. An unresolved role is not permission to lower effort or inherit an unknown model.
 
@@ -44,7 +44,7 @@ Custom personal agents live in `~/.codex/agents/`; project agents live in `.code
 
 ## Merge notes
 
-- Resolve the controller at the strongest eligible deep tier and `xhigh`; honor explicit controller pins or `--preserve-primary`. Preserve context window and auto-compact settings. Model discovery does not prove context-window entitlement.
+- Resolve the controller at the reviewed Sol tier and `xhigh`; honor explicit controller pins or `--preserve-primary`. Preserve context window and auto-compact settings. Model discovery does not prove context-window entitlement.
 - `max_concurrent_threads_per_session = 3` counts spawned threads, excluding the primary.
 - Rendered custom agents contain explicit model and reasoning values. Keep Workers and Reviewers at `xhigh`; do not copy unresolved source templates into a live installation.
 - Subagents inherit current sandbox/approval policy and live runtime overrides. A custom agent's `sandbox_mode = "read-only"` is a useful default, not permission to ignore a broader parent override; the controller must still enforce read-only behavior.

@@ -246,7 +246,7 @@ flowchart TB
 
 ## Codex 路由
 
-- 主会话默认使用最强可用深度层 + `xhigh`，保留完整任务状态；用户明确固定或要求保留设置时优先遵守。Codex 子代理在首次委派前按 [模型路由流程](../skills/strata/references/model-routing.md) 解析，命名角色不再绑定固定型号。
+- 主会话默认使用GPT-6.1 Sol + `xhigh`，保留完整任务状态；用户明确固定或要求保留设置时优先遵守。Codex 子代理在首次委派前按 [模型路由流程](../skills/strata/references/model-routing.md) 解析，命名角色不再绑定固定型号。
 - `scout`：读代码、查配置、定位测试，不修改。
 - `executor`：只执行完全指定的机械步骤；遇到语义判断就停止。
 - `worker`：常规实现，`xhigh`；触及安全/并发/公共接口时升级。

@@ -30,7 +30,7 @@ A shared personal package at `~/.agents/skills/strata/` can serve CLI and IDE in
    - JSON: preserve every unrelated object and array, and add environment keys inside the existing `env` object.
    - Markdown rules: append or update one delimited `Layered Agent Orchestration` section.
    - Agent files: compare before replacement; preserve user customization or obtain direction.
-6. For Codex, follow [model-routing.md](model-routing.md) to obtain the current catalog, preserve user pins, resolve and render all roles into a new staging directory. Merge the generated definitions and agent defaults, using the strongest eligible controller at `xhigh` unless explicitly pinned or preserved, while retaining context settings. Copy Claude templates independently. Never install bare Codex model-free source templates as resolved agents.
+6. For Codex, follow [model-routing.md](model-routing.md) to obtain the current catalog, preserve user pins, resolve and render all roles into a new staging directory. Merge the generated definitions and agent defaults, using the cost-aware Sol controller recommendation at `xhigh` unless explicitly pinned or preserved, while retaining context settings. Copy Claude templates independently. Never install bare Codex model-free source templates as resolved agents.
 7. Configure the concurrency controls for the client:
    - Codex: pin `agents.max_concurrent_threads_per_session = 3` unless the user asked for a different ceiling, then verify the observed parallelism as described in [codex.md](codex.md).
    - Claude Code: set `CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH` to `1` so the no-descendant invariant is client-enforced, and leave the concurrent-subagent ceiling at the client default; see [claude.md](claude.md).

@@ -42,6 +42,7 @@ REQUIRED_SKILL_FILES = (
     "references/codex.md",
     "references/model-routing.md",
     "references/auth-context.md",
+    "references/cost-control.md",
     "assets/model-policy.json",
     "scripts/resolve_models.py",
     "references/claude.md",

@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "reviewed_on": "2026-10-08",
+  "reviewed_on": "2026-10-09",
   "sources": [
     "https://developers.openai.com/api/docs/guides/model-selection",
     "https://learn.chatgpt.com/docs/app-server#models"
@@ -56,27 +56,31 @@
       "sandbox": "workspace-write"
     },
     "deep_worker": {
-      "tier": "deep",
+      "tier": "balanced",
       "effort": "xhigh",
       "sandbox": "workspace-write"
     },
     "reviewer": {
-      "tier": "deep",
+      "tier": "balanced",
       "effort": "xhigh",
       "sandbox": "read-only"
     }
   },
   "controller": {
-    "tier": "deep",
+    "tier": "balanced",
     "effort": "xhigh",
     "sandbox": "inherited"
   },
   "role_preferences": {
     "scout": [
-      "gpt-5.6-luna"
+      "gpt-6-luna"
     ],
     "executor": [
-      "gpt-5.6-luna"
+      "gpt-6-luna"
     ]
-  }
+  },
+  "automatic_models": [
+    "gpt-6.1-sol",
+    "gpt-6-luna"
+  ]
 }
