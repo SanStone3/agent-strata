@@ -24,6 +24,8 @@ Keep the model fixed for each existing Codex conversation/subagent. Do not try t
 
 Small, sequential or same-file tasks stay with the controller. Do not spawn a cheaper agent merely for a one-command task. For suitable independent work, autonomously choose the role and a compact packet; do not repeatedly ask whether to delegate.
 
+For retrieval and code reading, separate locating facts from judging behavior. A known file/symbol or literal search stays with direct tools. Independent multi-file evidence collection fits Luna scout. Cross-module semantics, architecture, security, concurrency and data invariants stay with Sol even when no files will be edited. Read-only does not mean low difficulty. See [references/cost-control.md](references/cost-control.md#retrieval-and-code-reading) for the boundary and return contract.
+
 ## Fast path and context
 
 When the current native tool exposes the installed role/model/effort and the task fits, dispatch directly. Do not re-read every guide, inspect helper source, run help or discover the entire catalog before each spawn. For missing/ambiguous bindings, use [references/model-routing.md](references/model-routing.md) and resolve once per execution context.

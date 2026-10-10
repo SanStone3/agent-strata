@@ -34,6 +34,24 @@ Estimate cost only from disjoint measured usage buckets: uncached input, cached 
 - Prefer Standard speed for routine work. Do not enable Fast/Ultrafast solely as a token-saving measure. Do not automatically change the user's current speed or provider settings.
 - Preserve meaningful tests, security/data invariants and independent review for risky changes. A cheap failed attempt plus rework can cost more than one properly scoped Sol task. Escalate from Luna by returning findings and spawning a new Sol packet; stronger expensive models require explicit approval/pinning.
 
+## Retrieval and code reading
+
+Optimize total cost per accepted change, including rework and verification, rather than the price of one answer. Preserve the quality bar first.
+
+| Task | Route | Evidence needed |
+|---|---|---|
+| Known file, symbol, literal search or one small excerpt | Controller uses direct tools | Relevant location and excerpt; no new agent just to read it |
+| Independent bounded search across files, call-site enumeration, log classification or locating tests | One Luna scout | File/symbol references, observed facts, missing evidence and what was searched |
+| Architecture, cross-module behavior, root cause, security, concurrency, lifecycle or data invariants | Sol controller or appropriately scoped Sol role | Relevant contracts and full reasoning context; read-only status does not lower difficulty |
+
+Search paths/symbols first, then read necessary ranges; expand when the contract spans more code. Group related independent lookups in one scout packet. Return up to five useful findings by default, with exact references and uncertainty; that is an output budget, not permission to omit a critical finding. Evidence completeness wins over an arbitrary token cap. A missing keyword is not proof that a feature, call path or vulnerability does not exist.
+
+If the scout cannot answer, return the collected evidence and precise unresolved question. The controller may create a new Sol packet that reuses that work; do not switch the existing scout's model, repeat the entire search or accept an unsupported conclusion. Keep final verification with the controller.
+
+Rechecked the three relevant official model pages on **2026-10-10**: GPT-6 Luna costs $0.10/$0.50 per million input/output tokens, GPT-5.6 Luna $0.20/$1.20, and GPT-5.6 Terra $2/$12 at Standard short-context rates. The older models are not the cheaper default. Sources: [GPT-6 Luna](https://developers.openai.com/api/docs/models/gpt-6-luna), [GPT-5.6 Luna](https://developers.openai.com/api/docs/models/gpt-5.6-luna), [GPT-5.6 Terra](https://developers.openai.com/api/docs/models/gpt-5.6-terra).
+
+The recognized 5.6 families remain available through explicit approved pins (for example `--pin scout=gpt-5.6-luna` or `--pin scout=gpt-5.6-terra`) when the current provider's actual price, availability and native-child compatibility justify them. Terra is a balanced model, not automatically a cheaper reader. Include input volume, cached input, output, retries and supported effort in the comparison; never assume an API gateway's rates match OpenAI's. Preserve known provider compatibility exclusions. Do not add a legacy model to automatic selection merely because it is older.
+
 ## Policy and session stability
 
 The user-supplied [ZiCode article](https://zicode.com/blog/codex-multi-agent-sol-luna/) motivates isolating noisy exploration from the controller and returning compact evidence. Adapt that method to current Sol/Luna rather than copying its older model IDs or rate assumptions. If the implementation boundary is unknown, use a narrow scout first, let the controller confirm the contract, then dispatch the writer; these dependent stages are not a parallel wave. Keep small work local and do not interpret “controller” as a prohibition on direct work.

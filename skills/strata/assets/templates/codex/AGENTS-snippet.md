@@ -11,5 +11,6 @@ Use `strata` and native Codex subagents for meaningful independent work. The cur
 - Named custom roles use compact task packets or limited recent-turn forks. Never combine explicit custom type with full-history fork. Pass necessary file pointers, constraints and acceptance evidence, not whole transcripts or repository dumps.
 - Scouts and reviewers remain read-only. Subagents do not spawn descendants, commit, push, deploy, expand scope, or invoke another coding-agent provider.
 - Reuse verified findings; avoid duplicate exploration. Keep xhigh for code and consequential review, meaningful tests and independent review where risk warrants it. Return concise evidence, changed paths, test outcomes and unresolved risks instead of raw logs.
+- For retrieval, use direct tools for a known file/symbol, Luna scout for bounded independent evidence collection, and Sol for complex semantics or risk judgment. Read-only is not automatically easy. Preserve necessary contracts and distinguish observations from inferences.
 - Announce a short allocation and material progress/blocks. On a conflict or failed assumption inspect actual state, stop the affected wave and rewrite the packet; never erase user work or blindly retry a writer.
 <!-- END AGENT STRATA -->
