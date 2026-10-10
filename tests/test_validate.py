@@ -223,7 +223,7 @@ status_line = ["ignored"]
 
 [agents]
 max_concurrent_threads_per_session = 3
-default_subagent_model = "gpt-5.6-terra"
+default_subagent_model = "gpt-6.1-sol"
 default_subagent_reasoning_effort = "xhigh"
 enabled = true
 
@@ -387,6 +387,13 @@ status_line = ["model-name"]
         code, output = self.validate(self.codex_home)
         self.assertEqual(1, code)
         self.assertIn("installed agent needs a resolved model", output)
+
+    def test_removed_model_fails_without_binding_file(self):
+        agent = self.codex_home / "agents/scout.toml"
+        agent.write_text(agent.read_text().replace("gpt-6-luna", "gpt-5.6-luna"))
+        code, output = self.validate(self.codex_home)
+        self.assertEqual(1, code)
+        self.assertIn("uses removed GPT-5.6", output)
 
     def test_default_model_drift_fails_with_binding(self) -> None:
         p = self.codex_home / "config.toml"

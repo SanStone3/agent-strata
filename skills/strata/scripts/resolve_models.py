@@ -37,6 +37,11 @@ class RoutingError(ValueError):
     pass
 
 
+def is_removed_model(name):
+    """GPT-5.6 IDs, namespaced IDs and snapshots cannot be selected by Strata."""
+    return isinstance(name, str) and re.search(r"(?:^|[/ :])gpt-5\.6(?:$|[-._:/])", name, re.IGNORECASE) is not None
+
+
 def utc_now():
     return datetime.now(timezone.utc).isoformat()
 
@@ -161,6 +166,8 @@ def validate_policy(policy):
             or any(not isinstance(name, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:/-]*", name) for name in automatic)
             or len(set(automatic)) != len(automatic)):
         raise RoutingError("automatic_models must be a nonempty unique list of reviewed model IDs")
+    if any(is_removed_model(name) for name in automatic):
+        raise RoutingError("GPT-5.6 has been removed from Strata")
     families = policy.get("families")
     if not isinstance(families, list):
         raise RoutingError("Policy families must be an array")
@@ -175,20 +182,27 @@ def validate_policy(policy):
         if not isinstance(policy.get(key, {}), dict):
             raise RoutingError(f"Policy {key} must be an object")
     for model, info in policy.get("models", {}).items():
+        if is_removed_model(model):
+            raise RoutingError("GPT-5.6 has been removed from Strata")
         if not isinstance(info, dict) or info.get("tier") not in TIERS or not info.get("evidence") or type(info.get("priority")) is not int:
             raise RoutingError(f"Explicit model classification needs tier, priority and evidence: {model}")
     for role, model in policy.get("pins", {}).items():
         if role not in ALL_ROLES or not isinstance(model, str) or not model:
             raise RoutingError("Invalid role pin")
+        if is_removed_model(model):
+            raise RoutingError("GPT-5.6 pins are no longer supported")
     for role, preferences in policy.get("role_preferences", {}).items():
         if (role not in ROLES or not isinstance(preferences, list) or not preferences
                 or any(not isinstance(name, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:/-]*", name)
                        for name in preferences)
                 or len(set(preferences)) != len(preferences)):
             raise RoutingError("Role preferences require a stable subagent role and nonempty unique model identifiers")
+        if any(is_removed_model(name) for name in preferences):
+            raise RoutingError("GPT-5.6 role preferences are no longer supported")
 
 
 def classifications(models, policy):
+    models = {name: model for name, model in models.items() if not is_removed_model(name)}
     known = {}
     for name in models:
         info = policy.get("models", {}).get(name)
@@ -246,6 +260,8 @@ def resolve(payload, policy, *, pins=None, excluded=(), allowed=None, modalities
     known = classifications(models, policy)
     selected_pins = dict(policy.get("pins", {}))
     selected_pins.update(pins or {})
+    if any(is_removed_model(name) for name in selected_pins.values()):
+        raise RoutingError("GPT-5.6 pins are no longer supported")
     if set(selected_pins) - set(ALL_ROLES):
         raise RoutingError("Unknown pinned role")
     if preserve_primary and "controller" in selected_pins:
@@ -574,6 +590,8 @@ def discover(codex="codex", timeout=20, codex_home=None, cwd=None, profile=None,
 
 def render(document, directory, skill=SKILL):
     """Generate a NEW staging directory. Installation remains a syntax-aware merge."""
+    if any(is_removed_model(b.get("model")) for b in document["bindings"].values()):
+        raise RoutingError("Cannot render removed GPT-5.6 bindings")
     if document["unresolved"]:
         raise RoutingError("Cannot render an incomplete role binding")
     directory = Path(directory)

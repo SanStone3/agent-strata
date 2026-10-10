@@ -50,7 +50,7 @@ If the scout cannot answer, return the collected evidence and precise unresolved
 
 Rechecked the three relevant official model pages on **2026-10-10**: GPT-6 Luna costs $0.10/$0.50 per million input/output tokens, GPT-5.6 Luna $0.20/$1.20, and GPT-5.6 Terra $2/$12 at Standard short-context rates. The older models are not the cheaper default. Sources: [GPT-6 Luna](https://developers.openai.com/api/docs/models/gpt-6-luna), [GPT-5.6 Luna](https://developers.openai.com/api/docs/models/gpt-5.6-luna), [GPT-5.6 Terra](https://developers.openai.com/api/docs/models/gpt-5.6-terra).
 
-The recognized 5.6 families remain available through explicit approved pins (for example `--pin scout=gpt-5.6-luna` or `--pin scout=gpt-5.6-terra`) when the current provider's actual price, availability and native-child compatibility justify them. Terra is a balanced model, not automatically a cheaper reader. Include input volume, cached input, output, retries and supported effort in the comparison; never assume an API gateway's rates match OpenAI's. Preserve known provider compatibility exclusions. Do not add a legacy model to automatic selection merely because it is older.
+GPT-5.6 is no longer callable through Strata, including explicit pins and custom policies. The legacy prices above are historical comparison data only. Use current Sol/Luna routes; preserve provider compatibility exclusions.
 
 ## Policy and session stability
 
@@ -58,6 +58,6 @@ The user-supplied [ZiCode article](https://zicode.com/blog/codex-multi-agent-sol
 
 Evaluate improvements on comparable real tasks: acceptance/test success, rework, defect severity, total billed tokens/cost across all children, elapsed time and controller-context growth. Faster parallel completion alone does not prove lower cost. Do not launch a paid benchmark merely to install this skill; use evidence from authorized work or a separately requested evaluation.
 
-Only IDs in `automatic_models` enter automatic selection. An unavailable Sol does not automatically become Astra or GPT-5.6 Sol. New model discovery is still dynamic, but adding a new automatic candidate requires checking its price and role fit. User-approved pins are explicit exceptions and remain subject to runtime availability and effort checks.
+Only IDs in `automatic_models` enter automatic selection. An unavailable Sol does not automatically become Astra or GPT-5.6 Sol. New model discovery is still dynamic, but adding a new automatic candidate requires checking its price and role fit. User-approved pins can override the automatic budget list for supported models, but cannot restore the removed GPT-5.6 family. Runtime availability and effort checks still apply.
 
 Record the chosen model for each conversation/subagent and keep it fixed. Changing a role file affects future children after reload; it does not change a running child. Preserve the user's current main model/effort and recommend Sol for a new session rather than trying to change the active conversation.

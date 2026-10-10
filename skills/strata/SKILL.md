@@ -1,51 +1,38 @@
 ---
 name: strata
-description: Configure or run cost-aware native subagent workflows for complex Codex or Claude Code tasks, with compact task packets, xhigh coding workers, an explicit concurrency budget, and provider isolation. Use for independent workstreams, scoped implementation, consequential review, or global/project setup; do not use for small sequential or same-file tasks.
+description: Cost-aware native subagent orchestration for Codex or Claude Code, with bounded tasks, xhigh coding workers, a concurrency budget and provider isolation. Use for independent workstreams, implementation, review or setup; do not use for trivial sequential work.
 ---
 
 # Strata
 
-Keep one controller accountable for the objective, user choices, permissions, integration and final validation. Delegate only when specialization or isolated context saves more work than the handoff costs.
+One controller owns quality, permissions, integration and delivery. Optimize total cost per accepted change, including rework; do not trade away necessary evidence or tests.
 
-## Route work
+## Choose the smallest useful route
 
-Codex defaults to GPT-6.1 Sol for implementation and review, and GPT-6 Luna for simple discovery and mechanical execution. Do not automatically select GPT-5.6 Sol, Astra, legacy alternatives or unpriced successors. `automatic_models` in [assets/model-policy.json](assets/model-policy.json) is the reviewed automatic selection set; an explicitly user-approved pin is the exception, not an automatic fallback. See [references/cost-control.md](references/cost-control.md) for pricing and quality-preserving savings.
+| Work | Codex route |
+|---|---|
+| Known file/symbol, literal search, trivial sequential task | Direct tools; no new agent |
+| Bounded independent evidence collection | `scout`: GPT-6 Luna, medium, read-only |
+| Exact mechanical operation | `executor`: GPT-6 Luna, medium |
+| Implementation or complex analysis | `worker` / `deep_worker`: GPT-6.1 Sol, xhigh |
+| Consequential independent review | `reviewer`: GPT-6.1 Sol, xhigh, read-only |
 
-| Role | Default model | Effort | Scope |
-|---|---|---|---|
-| Main controller | user-selected; recommend GPT-6.1 Sol for a new chat | preserve selection | Plan, integrate, verify |
-| `scout` | GPT-6 Luna | medium | Simple read-only evidence collection |
-| `executor` | GPT-6 Luna | medium | Exact mechanical operations |
-| `worker` | GPT-6.1 Sol | xhigh | Bounded implementation |
-| `deep_worker` | GPT-6.1 Sol | xhigh | Ambiguous or high-risk implementation |
-| `reviewer` | GPT-6.1 Sol | xhigh | Consequential independent read-only review |
+Read-only is not necessarily easy: architecture, security, concurrency and data invariants need Sol. Scouts report references, facts and uncertainties, not unsupported correctness judgments.
 
-Keep the model fixed for each existing Codex conversation/subagent. Do not try to change it during a turn, on resume, or by editing configuration. Select a model when creating a new child. If a packet exceeds its ability, return evidence and remaining scope to the controller; create a new bounded child if justified. Expensive-model escalation needs an explicit user choice; otherwise strengthen the evidence/validation or report the limit. Never claim equal capability across all models or guaranteed unchanged code quality.
+GPT-5.6 is removed: no selection, pin, custom-policy override, upgrade route or rendered role may invoke it. Automatic selection uses the reviewed Sol/Luna IDs in [assets/model-policy.json](assets/model-policy.json). Other expensive models require an explicit user-approved pin; availability alone is not approval.
 
-Small, sequential or same-file tasks stay with the controller. Do not spawn a cheaper agent merely for a one-command task. For suitable independent work, autonomously choose the role and a compact packet; do not repeatedly ask whether to delegate.
+## Execute efficiently
 
-For retrieval and code reading, separate locating facts from judging behavior. A known file/symbol or literal search stays with direct tools. Independent multi-file evidence collection fits Luna scout. Cross-module semantics, architecture, security, concurrency and data invariants stay with Sol even when no files will be edited. Read-only does not mean low difficulty. See [references/cost-control.md](references/cost-control.md#retrieval-and-code-reading) for the boundary and return contract.
+- Preserve the main model/effort chosen by the user. Recommend Sol for a new coding chat. Keep each conversation/subagent on its original model; escalation creates a new compact child, never a model switch on resume.
+- Use verified native role/model/effort declarations directly. If a declared role still uses GPT-5.6, do not dispatch it. Resolve missing bindings once per context using [model-routing.md](references/model-routing.md); avoid repeated help, source audits or catalog discovery.
+- Keep at most three active subagents and one writer by default. Three is a ceiling, not a target. Raise the budget only after the disjoint-write-domain checklist in [scaling.md](references/scaling.md).
+- Give a compact packet: goal, relevant paths/contracts, constraints, owned write domain, acceptance checks and result budget. Reuse verified findings; do not duplicate another agent's search or copy full transcripts/logs. Details: [task-contract.md](references/task-contract.md).
+- Keep scouts/reviewers read-only. Children do not spawn descendants, independently commit/push/deploy, expand scope or invoke another coding-agent provider. Preserve the current CODEX_HOME, auth, provider, profile and environment.
+- Inspect returned changes and run meaningful validation. On a conflict or failed assumption, inspect actual state and rewrite the packet; do not blindly retry writers or erase user work. Announce allocation and material progress briefly.
 
-## Fast path and context
+## Read only the relevant guide
 
-When the current native tool exposes the installed role/model/effort and the task fits, dispatch directly. Do not re-read every guide, inspect helper source, run help or discover the entire catalog before each spawn. For missing/ambiguous bindings, use [references/model-routing.md](references/model-routing.md) and resolve once per execution context.
-
-Keep the executing client's CODEX_HOME, executable, provider, profile, authentication and environment intact. Native children inherit that context. CLI ChatGPT login and IDE API-key login need separate bindings even with a shared skill package. For SSH, login differences or API compatibility errors, read [references/auth-context.md](references/auth-context.md). Never rotate credentials/providers to hide a failure.
-
-## Execution and quality
-
-1. Keep at most three active subagents and one writer by default. Three is a ceiling, not a target; additional packets run in waves. Raise the budget only with the disjoint-write-domain checklist in [references/scaling.md](references/scaling.md).
-2. Give each child the goal, relevant file/symbol pointers, constraints, acceptance evidence, owned paths and a short result budget. Use [references/task-contract.md](references/task-contract.md) for writing or multi-workstream packets. Do not copy full chat history or whole-repository dumps. Include necessary contracts and evidence rather than truncating them to meet an arbitrary token cap.
-3. Keep scouts/reviewers read-only. Freeze shared interfaces, schemas, manifests, lockfiles and generated artifacts before parallel writes. Subagents do not spawn descendants or independently commit, push, deploy, contact external parties or invoke another coding-agent provider.
-4. Preserve xhigh for code and consequential review. Save tokens first through targeted reads, focused diffs, reused verified evidence and concise results. Run meaningful tests and inspect writes; do not remove acceptance checks to make a cheaper route look successful.
-5. The controller stays productive on nonoverlapping work and does not duplicate a delegated search. Reuse a completed child's findings, not its entire transcript. Request follow-up only for a concrete gap or changed evidence.
-6. Return findings/changes, paths, test outcomes and remaining risks. Include detailed logs only around a relevant failure. Use an independent reviewer when risk justifies it; avoid mandatory multi-agent review for trivial edits.
-7. Report a short allocation and material progress/blocks. On conflicting writes or failed assumptions, inspect actual state and rewrite the packet; never blindly replay a writer or discard user work.
-
-## Installation and maintenance
-
-For installation read [references/install.md](references/install.md), then the requested provider reference: [references/codex.md](references/codex.md) or [references/claude.md](references/claude.md). Configure providers independently; Codex never invokes Claude and vice versa. Claude's native role/effort policy is unchanged by the Codex cost profile.
-
-Back up and merge only relevant files. Share the skill at a user-discovered location, but render native definitions and save bindings in each actual CODEX_HOME. Preserve current main-session choice with `--preserve-primary`, context settings, credentials, endpoints, permissions and unrelated configuration. Defaults for future sessions do not change an active conversation.
-
-Validate source and installed state with [references/validation.md](references/validation.md). Distinguish configured settings, live discovery and successful native inference. If model/effort capability is unverified or a required role is unresolved, report the gap rather than silently weakening the task.
+- Install/update: [install.md](references/install.md), then [Codex](references/codex.md) or [Claude](references/claude.md). Back up and merge; preserve unrelated settings and active main sessions with `--preserve-primary`. Configure providers independently.
+- Separate logins, SSH, API summary/region failures: [auth-context.md](references/auth-context.md). Never copy credentials or switch providers to hide errors.
+- Audit/verification: [validation.md](references/validation.md). Distinguish configuration, discovery and successful native inference; never dispatch unresolved roles.
+- Price and context efficiency: [cost-control.md](references/cost-control.md). Claude's independent native policy is unchanged.

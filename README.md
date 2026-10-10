@@ -60,7 +60,7 @@ python3 skills/strata/scripts/resolve_models.py --discover
 python3 skills/strata/scripts/resolve_models.py --discover --output-dir /path/to/new-staging-dir
 ```
 
-当前默认只自动选择已核价的 **GPT-6.1 Sol** 和 **GPT-6 Luna**：Luna 处理简单探索和机械任务，Sol 处理实现、复杂任务及独立审查；代码与关键审查保留 `xhigh`。Astra、GPT-5.6 Sol 及未核价新型号不进入自动回退，明确授权的 pin 除外。同一会话固定模型，需要升级时创建新的有界子任务。主会话仍由用户选择。费用表及节省上下文的方法见 [成本与质量](skills/strata/references/cost-control.md)。
+当前默认只自动选择已核价的 **GPT-6.1 Sol** 和 **GPT-6 Luna**：Luna 处理简单探索和机械任务，Sol 处理实现、复杂任务及独立审查；代码与关键审查保留 `xhigh`。GPT-5.6 全系列已移除，显式 pin 也不能恢复；Astra 及未核价新型号不进入自动回退，其他受支持型号的明确授权 pin 除外。同一会话固定模型，需要升级时创建新的有界子任务。主会话仍由用户选择。费用表及节省上下文的方法见 [成本与质量](skills/strata/references/cost-control.md)。
 
 原生工具支持覆盖模型时，在创建新子 Agent 时明确传入绑定；仅支持命名 Agent 的客户端需要合并生成的定义并在会话边界刷新。模板本身不含型号，不能直接当作已绑定配置安装。旧角色名有迁移映射，校验器不再强制 GPT-5.6。详见 [模型路由、升级与回退](skills/strata/references/model-routing.md)。
 

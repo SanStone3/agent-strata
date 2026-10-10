@@ -58,6 +58,32 @@ class RoutingTests(unittest.TestCase):
         self.assertEqual("inherited", doc["bindings"]["controller"]["sandbox_mode"])
         self.assertEqual("read-only", doc["bindings"]["reviewer"]["sandbox_mode"])
 
+    def test_removed_family_pins_and_custom_policy_are_rejected(self):
+        for name in ("gpt-5.6", "gpt-5.6-luna", "gpt-5.6-terra", "gpt-5.6-sol-20261001", "openai/gpt-5.6-luna", "GPT-5.6-SOL"):
+            with self.subTest(name=name), self.assertRaisesRegex(R.RoutingError, "GPT-5.6"):
+                self.resolve(pins={"scout": name})
+        for key, value in (("pins", {"scout": "gpt-5.6-luna"}), ("models", {"gpt-5.6-luna": {"tier": "efficient", "priority": 99, "evidence": "override"}}), ("role_preferences", {"scout": ["gpt-5.6-luna"]})):
+            p = copy.deepcopy(self.policy)
+            p[key] = value
+            with self.subTest(key=key), self.assertRaises(R.RoutingError):
+                R.resolve(catalog(), p)
+
+    def test_removed_family_cannot_reenter_through_upgrade_or_render(self):
+        payload = catalog()
+        payload["data"][3]["upgrade"] = "gpt-5.6-luna"
+        self.assertNotIn("gpt-5.6-luna", R.classifications(R.normalize_catalog(payload), self.policy))
+        self.policy["automatic_models"].append("gpt-5.6-luna")
+        with self.assertRaises(R.RoutingError):
+            self.resolve()
+        self.policy["automatic_models"].pop()
+        doc = self.resolve()
+        doc["bindings"]["scout"]["model"] = "gpt-5.6-luna"
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "out"
+            with self.assertRaises(R.RoutingError):
+                R.render(doc, out)
+            self.assertFalse(out.exists())
+
     def test_no_automatic_expensive_or_legacy_fallback(self):
         for rows in ([model("gpt-6-astra")], [model("gpt-5.6-sol")], [model("gpt-5.6-luna"), model("gpt-5.6-terra")]):
             doc = self.resolve({"models": rows})
@@ -65,7 +91,7 @@ class RoutingTests(unittest.TestCase):
             self.assertTrue(doc["unresolved"])
 
     def test_preference_cannot_bypass_automatic_budget_list(self):
-        self.policy["role_preferences"] = {"worker": ["gpt-5.6-terra"], "scout": ["gpt-5.6-luna"]}
+        self.policy["role_preferences"] = {"worker": ["gpt-6-sol"], "scout": ["gpt-6.0-luna"]}
         doc = self.resolve()
         self.assertEqual("gpt-6.1-sol", doc["bindings"]["worker"]["model"])
         self.assertEqual("gpt-6-luna", doc["bindings"]["scout"]["model"])
@@ -169,12 +195,12 @@ class RoutingTests(unittest.TestCase):
         self.assertIn("worker", doc["unresolved"])
 
     def test_role_preferences_prioritize_ordered_eligible_models(self):
-        self.policy["automatic_models"].append("gpt-5.6-luna")
-        self.policy["role_preferences"] = {"scout": ["gpt-5.6-luna", "gpt-6-luna"],
-                                           "executor": ["gpt-5.6-luna"]}
-        doc = self.resolve()
+        self.policy["automatic_models"].append("gpt-6.0-luna")
+        self.policy["role_preferences"] = {"scout": ["gpt-6.0-luna", "gpt-6-luna"],
+                                           "executor": ["gpt-6.0-luna"]}
+        doc = self.resolve(catalog(model("gpt-6.0-luna")))
         for role in ("scout", "executor"):
-            self.assertEqual("gpt-5.6-luna", doc["bindings"][role]["model"])
+            self.assertEqual("gpt-6.0-luna", doc["bindings"][role]["model"])
             self.assertEqual("medium", doc["bindings"][role]["reasoning_effort"])
             self.assertFalse(doc["bindings"][role]["pinned"])
         self.assertEqual(["gpt-6-luna"], doc["bindings"]["scout"]["alternatives"])
@@ -182,13 +208,14 @@ class RoutingTests(unittest.TestCase):
         self.assertFalse(doc["access_verified"])
         self.assertEqual(doc["bindings"], R.verify_binding(doc, self.policy)["bindings"])
         self.policy["role_preferences"]["scout"].reverse()
-        self.assertEqual("gpt-6-luna", self.resolve()["bindings"]["scout"]["model"])
+        self.assertEqual("gpt-6-luna", self.resolve(catalog(model("gpt-6.0-luna")))["bindings"]["scout"]["model"])
 
     def test_preferences_missing_hidden_incompatible_or_wrong_tier_fall_back(self):
-        self.policy["automatic_models"] += ["gpt-5.6-luna", "gpt-6-sol"]
-        self.policy["role_preferences"] = {"scout": ["gpt-5.6-luna"]}
+        self.policy["automatic_models"] += ["gpt-6.0-luna", "gpt-6-sol"]
+        self.policy["role_preferences"] = {"scout": ["gpt-6.0-luna"]}
         for condition in ("missing", "hidden", "effort", "tier", "unclassified"):
             payload = catalog()
+            payload["data"][0] = model("gpt-6.0-luna")
             if condition == "missing":
                 del payload["data"][0]
             elif condition == "hidden":
@@ -196,20 +223,20 @@ class RoutingTests(unittest.TestCase):
             elif condition == "effort":
                 payload["data"][0]["supportedReasoningEfforts"] = ["high"]
             elif condition == "tier":
-                self.policy["role_preferences"]["scout"] = ["gpt-5.6-sol"]
+                self.policy["role_preferences"]["scout"] = ["gpt-6-astra"]
             else:
                 self.policy["role_preferences"]["scout"] = ["unknown-model"]
                 payload["data"].append(model("unknown-model"))
             with self.subTest(condition=condition):
-                self.assertEqual("gpt-6-luna", self.resolve(payload)["bindings"]["scout"]["model"])
-        self.policy["role_preferences"] = {"worker": ["gpt-5.6-terra"]}
+                self.assertEqual("gpt-6.0-luna" if condition in ("tier", "unclassified") else "gpt-6-luna", self.resolve(payload)["bindings"]["scout"]["model"])
+        self.policy["role_preferences"] = {"worker": ["gpt-6-sol"]}
         payload = catalog()
-        payload["data"][1]["supportedReasoningEfforts"] = ["high"]
+        payload["data"][4]["supportedReasoningEfforts"] = ["high"]
         self.assertEqual("gpt-6.1-sol", self.resolve(payload)["bindings"]["worker"]["model"])
 
     def test_preferences_obey_filters_and_pins(self):
-        self.policy["role_preferences"] = {"scout": ["gpt-5.6-luna"]}
-        for options in ({"allowed": ["gpt-6-luna"]}, {"excluded": ["gpt-5.6-luna"]},
+        self.policy["role_preferences"] = {"scout": ["gpt-6.0-luna"]}
+        for options in ({"allowed": ["gpt-6-luna"]}, {"excluded": ["gpt-6.0-luna"]},
                         {"pins": {"scout": "gpt-6-luna"}}):
             with self.subTest(options=options):
                 self.assertEqual("gpt-6-luna", self.resolve(**options)["bindings"]["scout"]["model"])
@@ -217,7 +244,7 @@ class RoutingTests(unittest.TestCase):
         payload["data"][3]["inputModalities"] = ["image"]
         self.assertEqual("gpt-6-luna", self.resolve(payload, modalities=["image"])["bindings"]["scout"]["model"])
         self.policy["pins"]["scout"] = "gpt-6-luna"
-        self.assertEqual("gpt-6-luna", self.resolve()["bindings"]["scout"]["model"])
+        self.assertEqual("gpt-6-luna", self.resolve(catalog(model("gpt-6.0-luna")))["bindings"]["scout"]["model"])
 
     def test_absent_preferences_preserve_family_ranking(self):
         self.policy.pop("role_preferences", None)
@@ -225,10 +252,10 @@ class RoutingTests(unittest.TestCase):
             self.assertEqual("gpt-6-luna", self.resolve()["bindings"][role]["model"])
 
     def test_malformed_role_preferences_rejected(self):
-        for preferences in (None, [], {"invalid": ["gpt-5.6-luna"]}, {"controller": ["gpt-5.6-sol"]},
-                            {"scout": "gpt-5.6-luna"}, {"scout": []}, {"scout": [""]},
+        for preferences in (None, [], {"invalid": ["gpt-6.0-luna"]}, {"controller": ["gpt-6-astra"]},
+                            {"scout": "gpt-6.0-luna"}, {"scout": []}, {"scout": [""]},
                             {"scout": [" "]}, {"scout": [42]}, {"scout": [{}]},
-                            {"scout": ["gpt-5.6-luna", "gpt-5.6-luna"]}):
+                            {"scout": ["gpt-6.0-luna", "gpt-6.0-luna"]}):
             self.policy["role_preferences"] = preferences
             with self.subTest(preferences=preferences), self.assertRaisesRegex(R.RoutingError, "[Pp]references"):
                 self.resolve()

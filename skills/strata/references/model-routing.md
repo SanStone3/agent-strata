@@ -51,7 +51,7 @@ python3 scripts/resolve_models.py --catalog /path/to/models.json \
 
 ## Task-sensitive cost preferences
 
-The default `automatic_models` allowlist contains only `gpt-6.1-sol` and `gpt-6-luna`, whose pricing and role fit have been reviewed. Discovery can report other/newer models, but availability or a version number alone does not authorize automatic paid selection. Review price and capability before adding a new ID. An explicit user-approved pin bypasses the automatic list while retaining capability, effort, visibility and caller-allowlist checks. Missing approved models remain unresolved; never silently fall back to Astra or a legacy model.
+The default `automatic_models` allowlist contains only `gpt-6.1-sol` and `gpt-6-luna`, whose pricing and role fit have been reviewed. Discovery can report other/newer models, but availability or a version number alone does not authorize automatic paid selection. Review price and capability before adding a new ID. GPT-5.6 is removed from classification, selection and rendering; neither pins nor custom policies can restore it. An explicit user-approved pin for another supported model bypasses the automatic list while retaining capability, effort, visibility and caller-allowlist checks. Missing approved models remain unresolved; never silently fall back to Astra or a legacy model.
 
 `role_preferences` orders eligible candidates only; it cannot bypass `automatic_models`. The default prefers GPT-6 Luna for scout/executor and Sol for implementation/review. These roles describe tasks, not claims that all model tiers have identical capability. See [cost-control.md](cost-control.md).
 

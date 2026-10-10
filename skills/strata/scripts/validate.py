@@ -456,6 +456,8 @@ class Validator:
             # or non-positive value leaves the effective budget unknown.
             self.error(f"Codex max_concurrent_threads_per_session must be a positive integer, found: {cap!r}")
         default_model = agents_config.get("default_subagent_model")
+        if not template and ROUTING.is_removed_model(default_model):
+            self.error("Codex default subagent model uses removed GPT-5.6")
         if template and default_model is not None:
             self.error("Codex template must resolve the default subagent model dynamically")
         elif default_model is not None:
@@ -500,6 +502,8 @@ class Validator:
                     self.error(f"{filename} template must not hard-code a model")
             elif not isinstance(model, str) or not model.strip():
                 self.error(f"{filename} installed agent needs a resolved model")
+            elif ROUTING.is_removed_model(model):
+                self.error(f"{filename} uses removed GPT-5.6")
             elif self.bindings and model != self.bindings[role]["model"]:
                 self.error(f"{filename} model differs from the {role} binding")
             if values.get("model_reasoning_effort") != effort:
