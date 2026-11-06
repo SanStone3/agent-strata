@@ -76,6 +76,9 @@ CODEX_CONFIG_TABLE_KEYS = {
 }
 
 SHARED_SCALING_POLICIES = {
+    "host-adaptive concurrency": re.compile(
+        r"\b(?:host capacity|available host slots|actual host slots)\b", re.IGNORECASE
+    ),
     "budget caps concurrency, not total work": re.compile(
         r"(?:budget caps concurrency,? not total work|budget limits concurrency,? not total work|"
         r"caps concurrency rather than total work)",
@@ -89,9 +92,6 @@ SHARED_SCALING_POLICIES = {
 }
 
 CODEX_AGENTS_POLICIES = {
-    "max three active subagents": re.compile(
-        r"\b(?:at most three active subagents|at most three spawned workers open)\b", re.IGNORECASE
-    ),
     "one writer by default": re.compile(
         r"\b(?:one writer by default|only one code-writing worker by default)\b", re.IGNORECASE
     ),
@@ -113,9 +113,6 @@ CODEX_AGENTS_POLICIES = {
 }
 
 CLAUDE_RULES_POLICIES = {
-    "max three active subagents": re.compile(
-        r"\b(?:at most three active subagents|at most three workers active)\b", re.IGNORECASE
-    ),
     "one writer by default": re.compile(
         r"\b(?:one writer by default|only one code-writing worker by default)\b", re.IGNORECASE
     ),
@@ -381,7 +378,7 @@ class Validator:
         if values.get("name") != "strata":
             self.error("SKILL.md name must be strata")
         description = values.get("description", "")
-        for phrase in ("Codex", "Claude Code", "xhigh", "concurrency budget", "do not use"):
+        for phrase in ("Codex", "Claude Code", "task", "do not use"):
             if phrase not in description:
                 self.error(f"SKILL.md description must discriminate on: {phrase}")
 
@@ -430,10 +427,6 @@ class Validator:
                 self.error("Codex template must preserve primary model, effort and context settings")
         elif model is not None and (not isinstance(model, str) or not model.strip()):
             self.error("Codex primary model must be a nonempty string when set")
-        if not template and self.bindings and "controller" in self.bindings:
-            controller = self.bindings["controller"]
-            if model != controller["model"] or config.get("model_reasoning_effort") != controller["reasoning_effort"]:
-                self.error("Codex primary model/effort differs from the controller binding")
         window = config.get("model_context_window")
         compact = config.get("model_auto_compact_token_limit")
         for key, value in (("model_context_window", window), ("model_auto_compact_token_limit", compact)):
@@ -449,12 +442,10 @@ class Validator:
             self.error("Codex agents must be enabled")
         cap = agents_config.get("max_concurrent_threads_per_session")
         if template:
-            if cap != 3:
-                self.error("Codex template concurrency budget must pin 3 spawned threads")
-        elif type(cap) is not int or cap < 1:
-            # A raised ceiling is allowed when the user asked for it; an absent
-            # or non-positive value leaves the effective budget unknown.
-            self.error(f"Codex max_concurrent_threads_per_session must be a positive integer, found: {cap!r}")
+            if cap is not None:
+                self.error("Codex template must leave concurrency to host capacity and user/project policy")
+        elif cap is not None and (type(cap) is not int or cap < 1):
+            self.error(f"Codex max_concurrent_threads_per_session must be a positive integer when set, found: {cap!r}")
         default_model = agents_config.get("default_subagent_model")
         if not template and ROUTING.is_removed_model(default_model):
             self.error("Codex default subagent model uses removed GPT-5.6")
@@ -465,8 +456,12 @@ class Validator:
                 self.error("Codex default subagent model must be a nonempty string")
             elif self.bindings and default_model != self.bindings["worker"]["model"]:
                 self.error("Codex default subagent model differs from the worker binding")
-        if agents_config.get("default_subagent_reasoning_effort") != "xhigh":
-            self.error("Codex default subagent effort must be xhigh")
+        default_effort = agents_config.get("default_subagent_reasoning_effort")
+        expected_effort = self.bindings["worker"]["reasoning_effort"] if self.bindings and not template else None
+        if (default_effort not in ROUTING.ROLE_EFFORTS["worker"]
+                or (expected_effort and default_effort != expected_effort)
+                or (template and default_effort != ROUTING.ROLES["worker"][1])):
+            self.error("Codex default subagent effort must match the worker binding or role contract")
 
     def validate_codex_agents(self, directory: Path, *, template: bool = True) -> None:
         names: set[str] = set()
@@ -506,8 +501,12 @@ class Validator:
                 self.error(f"{filename} uses removed GPT-5.6")
             elif self.bindings and model != self.bindings[role]["model"]:
                 self.error(f"{filename} model differs from the {role} binding")
-            if values.get("model_reasoning_effort") != effort:
-                self.error(f"{filename} effort must be {effort}")
+            actual_effort = values.get("model_reasoning_effort")
+            expected_effort = self.bindings[role]["reasoning_effort"] if self.bindings and not template else None
+            if (actual_effort not in ROUTING.ROLE_EFFORTS[role]
+                    or (expected_effort and actual_effort != expected_effort)
+                    or (template and actual_effort != effort)):
+                self.error(f"{filename} effort must match the {role} binding or role contract")
             if values.get("sandbox_mode") != sandbox:
                 self.error(f"{filename} sandbox must be {sandbox}")
             instructions = values.get("developer_instructions", "")
@@ -559,7 +558,7 @@ class Validator:
                 elif self.codex_home:
                     self.warnings.append("Binding has no runtime context; host/auth/provider identity remains unverified")
                 if result["unresolved"]:
-                    raise ROUTING.RoutingError("Installed configuration requires the controller (unless preserved) and all five subagent bindings")
+                    raise ROUTING.RoutingError("Installed configuration requires all five resolved subagent bindings")
                 self.bindings = result["bindings"]
         except (ROUTING.RoutingError, TypeError, KeyError) as exc:
             self.error(f"Model routing validation failed: {exc}")

@@ -112,7 +112,7 @@ class ValidatorMutationTests(unittest.TestCase):
 
     def test_missing_codex_core_policies_fail(self) -> None:
         self.replace(
-            "assets/templates/codex/AGENTS-snippet.md", "at most three active subagents", "at most four active subagents"
+            "assets/templates/codex/AGENTS-snippet.md", "actual host slots", "arbitrary capacity"
         )
         self.replace("assets/templates/codex/AGENTS-snippet.md", "one writer by default", "multiple writers by default")
         self.replace("assets/templates/codex/AGENTS-snippet.md", "Subagents do not spawn descendants", "Subagents may spawn descendants")
@@ -122,7 +122,7 @@ class ValidatorMutationTests(unittest.TestCase):
         code, output = self.validate()
         self.assertEqual(1, code)
         for policy in (
-            "max three active subagents",
+            "host-adaptive concurrency",
             "one writer by default",
             "no descendant agents",
             "no cross-provider invocation",
@@ -147,7 +147,7 @@ class ValidatorMutationTests(unittest.TestCase):
 
     def test_explicit_codex_home_checks_active_configuration(self) -> None:
         (self.codex_home / "AGENTS.md").write_text(
-            """- Keep at most three spawned workers open; allow only one code-writing worker by default.
+            """- Use actual host slots; allow only one code-writing worker by default.
 - The budget limits concurrency, not total work; further packets run in later waves.
 - The budget may be raised only when every writer owns disjoint write domains with frozen shared contracts.
 - Never invoke Claude, `claude`, a Claude MCP server, or a cross-provider wrapper from Codex.
@@ -240,39 +240,21 @@ status_line = ["model-name"]
         self.assertEqual(0, code, output)
 
 
-    def test_template_concurrency_budget_must_pin_three(self) -> None:
-        self.replace(
-            "assets/templates/codex/config-snippet.toml",
-            "max_concurrent_threads_per_session = 3",
-            "max_concurrent_threads_per_session = 6",
-        )
+    def test_template_must_not_pin_any_concurrency_cap(self) -> None:
+        path = self.skill / "assets/templates/codex/config-snippet.toml"
+        path.write_text(path.read_text() + "\nmax_concurrent_threads_per_session = 3\n")
         code, output = self.validate()
         self.assertEqual(1, code)
-        self.assertIn("Codex template concurrency budget must pin 3 spawned threads", output)
+        self.assertIn("template must leave concurrency", output)
 
-    def test_installed_home_may_raise_the_concurrency_ceiling(self) -> None:
+    def test_installed_home_may_omit_or_set_a_positive_cap(self) -> None:
         config = self.codex_home / "config.toml"
-        config.write_text(
-            config.read_text(encoding="utf-8").replace(
-                "max_concurrent_threads_per_session = 3",
-                "max_concurrent_threads_per_session = 6",
-                1,
-            ),
-            encoding="utf-8",
-        )
-        code, output = self.validate(self.codex_home)
-        self.assertEqual(0, code, output)
-        config.write_text(
-            config.read_text(encoding="utf-8").replace(
-                "max_concurrent_threads_per_session = 6",
-                "max_concurrent_threads_per_session = 0",
-                1,
-            ),
-            encoding="utf-8",
-        )
-        code, output = self.validate(self.codex_home)
-        self.assertEqual(1, code)
-        self.assertIn("max_concurrent_threads_per_session must be a positive integer", output)
+        original = config.read_text()
+        for cap in (None, "1", "6", "0", "-1", "true"):
+            with self.subTest(cap=cap):
+                config.write_text(original + (f"\nmax_concurrent_threads_per_session = {cap}\n" if cap else ""))
+                code, output = self.validate(self.codex_home)
+                self.assertEqual(0 if cap in (None, "1", "6") else 1, code, output)
 
     def test_installed_home_may_omit_the_long_session_baseline(self) -> None:
         config = self.codex_home / "config.toml"
@@ -315,12 +297,14 @@ status_line = ["model-name"]
         self.assertEqual(1, code)
         self.assertIn("Binding no longer matches", output)
 
-    def test_controller_configuration_drift_is_rejected(self) -> None:
+    def test_user_primary_switches_do_not_invalidate_subagent_bindings(self) -> None:
         config = self.codex_home / "config.toml"
-        config.write_text(config.read_text().replace('model_reasoning_effort = "xhigh"', 'model_reasoning_effort = "high"'))
-        code, output = self.validate(self.codex_home, bindings=self.bindings_path)
-        self.assertEqual(1, code)
-        self.assertIn("primary model/effort differs from the controller binding", output)
+        original = config.read_text()
+        for model, effort in (("user-selected-model", "high"), ("gpt-6-luna", "low"), ("gpt-6.1-sol", "xhigh")):
+            with self.subTest(model=model, effort=effort):
+                config.write_text(f'model = "{model}"\nmodel_reasoning_effort = "{effort}"\n' + original)
+                code, output = self.validate(self.codex_home, bindings=self.bindings_path)
+                self.assertEqual(0, code, output)
 
     def bind_context(self, *, home=None, provider="openai", profile=None):
         context = {

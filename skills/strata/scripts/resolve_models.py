@@ -19,13 +19,20 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 SKILL = Path(__file__).resolve().parents[1]
-TIERS = {"efficient": 0, "balanced": 1, "deep": 2}
+TIERS = {"efficient": 0, "bounded": 1, "balanced": 2, "deep": 3}
 ROLES = {
     "scout": ("efficient", "medium", "read-only"),
     "executor": ("efficient", "medium", "workspace-write"),
-    "worker": ("balanced", "xhigh", "workspace-write"),
+    "worker": ("bounded", "medium", "workspace-write"),
     "deep_worker": ("balanced", "xhigh", "workspace-write"),
     "reviewer": ("balanced", "xhigh", "read-only"),
+}
+# Defaults are task starting points; capability and write boundaries stay fixed.
+ROLE_EFFORTS = {
+    "scout": ("low", "medium"), "executor": ("low", "medium"),
+    "worker": ("medium", "high", "xhigh"),
+    "deep_worker": ("high", "xhigh", "max"), "reviewer": ("high", "xhigh", "max"),
+    "controller": ("none", "low", "medium", "high", "xhigh", "max"),
 }
 CONTROLLER = {"controller": ("balanced", "xhigh", "inherited")}
 ALL_ROLES = {**CONTROLLER, **ROLES}
@@ -249,7 +256,8 @@ def classifications(models, policy):
     return known
 
 
-def resolve(payload, policy, *, pins=None, excluded=(), allowed=None, modalities=(), preserve_primary=False):
+def resolve(payload, policy, *, pins=None, excluded=(), allowed=None, modalities=(), preserve_primary=True,
+            efforts=None, task_kind="coding"):
     validate_policy(policy)
     if not isinstance(payload, dict):
         raise RoutingError("Catalog must be an object")
@@ -259,6 +267,10 @@ def resolve(payload, policy, *, pins=None, excluded=(), allowed=None, modalities
     models = normalize_catalog(payload)
     known = classifications(models, policy)
     selected_pins = dict(policy.get("pins", {}))
+    # A historical installation preference must not pin the live primary.
+    ignored_controller_pin = preserve_primary and "controller" in selected_pins
+    if preserve_primary:
+        selected_pins.pop("controller", None)
     selected_pins.update(pins or {})
     if any(is_removed_model(name) for name in selected_pins.values()):
         raise RoutingError("GPT-5.6 pins are no longer supported")
@@ -266,12 +278,20 @@ def resolve(payload, policy, *, pins=None, excluded=(), allowed=None, modalities
         raise RoutingError("Unknown pinned role")
     if preserve_primary and "controller" in selected_pins:
         raise RoutingError("Cannot combine a controller pin with preserve-primary")
+    efforts = dict(efforts or {})
+    if task_kind not in ("coding", "scoped"):
+        raise RoutingError("task_kind must be coding or scoped")
+    if any(role not in ROLE_EFFORTS or level not in ROLE_EFFORTS[role] for role, level in efforts.items()):
+        raise RoutingError("Effort override violates the role contract")
+    if preserve_primary and "controller" in efforts:
+        raise RoutingError("Controller effort is advisory; request controller resolution explicitly")
     bindings, unresolved = {}, {}
     excluded = set(excluded)
     allowed = set(allowed) if allowed is not None else None
     for role, (tier, effort, sandbox) in ALL_ROLES.items():
         if role == "controller" and preserve_primary:
             continue
+        effort = efforts.get(role, effort)
         pin = selected_pins.get(role)
         candidates = []
         for name, model in models.items():
@@ -287,10 +307,18 @@ def resolve(payload, policy, *, pins=None, excluded=(), allowed=None, modalities
             if pin:
                 if name != pin or (role != "controller" and TIERS[info["tier"]] < TIERS[tier]):
                     continue
+            elif role == "worker":
+                # Coding stays on Sol; scoped work may use Terra, but its higher
+                # reasoning cost is not an automatic xhigh savings strategy.
+                if info["tier"] not in ({"balanced"} if task_kind == "coding" or effort == "xhigh"
+                                        else {"bounded", "balanced"}):
+                    continue
             elif info["tier"] != tier:
                 continue
             candidates.append(name)
         preferences = policy.get("role_preferences", {}).get(role, [])
+        if role == "worker" and task_kind == "scoped":
+            preferences = ["gpt-6.1-terra", "gpt-6.1-sol"]
         preference_rank = {name: len(preferences) - index for index, name in enumerate(preferences)}
         candidates.sort(key=lambda n: (preference_rank.get(n, 0), known[n]["rank"], models[n]["isDefault"], n), reverse=True)
         if not candidates:
@@ -308,11 +336,14 @@ def resolve(payload, policy, *, pins=None, excluded=(), allowed=None, modalities
             "catalog": list(models.values()), "bindings": bindings, "unresolved": unresolved,
             "constraints": {"pins": selected_pins, "excluded": sorted(excluded),
                             "allowed": sorted(allowed) if allowed is not None else None,
-                            "modalities": sorted(modalities), "preserve_primary": preserve_primary},
+                            "modalities": sorted(modalities), "preserve_primary": preserve_primary,
+                            "efforts": efforts, "task_kind": task_kind},
             "unclassified": sorted(set(models) - set(known)),
             "access_verified": False,
             "warnings": ["Catalog membership is not an entitlement or successful-inference check.",
-                         "Use only with the same host, account, provider and calling tool; refresh after any change."]}
+                         "Use only with the same host, account, provider and calling tool; refresh after any change."]
+                        + (["Ignored policy controller pin; the current CLI/App selection owns the primary."]
+                           if ignored_controller_pin else [])}
 
 
 def verify_binding(document, policy, expected_context=None):
@@ -605,13 +636,16 @@ def render(document, directory, skill=SKILL):
             binding = document["bindings"][role]
             filename = role.replace("_", "-") + ".toml"
             content = (template / "agents" / filename).read_text(encoding="utf-8")
+            content = re.sub(r'^model_reasoning_effort = ".*"$',
+                             "model_reasoning_effort = " + json.dumps(binding["reasoning_effort"]),
+                             content, flags=re.MULTILINE)
             (directory / "agents" / filename).write_text(
                 "model = " + json.dumps(binding["model"]) + "\n" + content, encoding="utf-8")
         content = (template / "config-snippet.toml").read_text(encoding="utf-8")
-        controller = document["bindings"].get("controller")
-        if controller:
-            content = "model = " + json.dumps(controller["model"]) + "\nmodel_reasoning_effort = " + json.dumps(controller["reasoning_effort"]) + "\n\n" + content
         content = content.replace("[agents]\n", "[agents]\ndefault_subagent_model = " + json.dumps(document["bindings"]["worker"]["model"]) + "\n", 1)
+        content = re.sub(r'^default_subagent_reasoning_effort = ".*"$',
+                         "default_subagent_reasoning_effort = " + json.dumps(document["bindings"]["worker"]["reasoning_effort"]),
+                         content, flags=re.MULTILINE)
         (directory / "config-snippet.toml").write_text(content, encoding="utf-8")
         shutil.copyfile(template / "AGENTS-snippet.md", directory / "AGENTS-snippet.md")
         (directory / "model-bindings.json").write_text(json.dumps(document, indent=2) + "\n", encoding="utf-8")
@@ -639,6 +673,10 @@ def main(argv=None):
     parser.add_argument("--require-modality", action="append", default=[])
     parser.add_argument("--role", choices=list(ALL_ROLES) + list(ALIASES), help="require only this role to resolve")
     parser.add_argument("--preserve-primary", action="store_true", help="resolve only subagents; leave primary model and effort unchanged")
+    parser.add_argument("--task-kind", choices=("coding", "scoped"), default="coding",
+                        help="worker preference: Sol for coding; Terra for bounded, readily checked tasks")
+    parser.add_argument("--effort", action="append", default=[], metavar="ROLE=LEVEL",
+                        help="choose supported task effort without changing capability/write boundaries")
     parser.add_argument("--output-dir", type=Path, help="render all roles into a new staging directory")
     args = parser.parse_args(argv)
     try:
@@ -649,6 +687,16 @@ def main(argv=None):
             if not separator or role not in ALL_ROLES or not model or role in pins:
                 raise RoutingError("Pins must be unique ROLE=MODEL pairs")
             pins[role] = model
+        efforts = {}
+        for item in args.effort:
+            role, separator, level = item.partition("=")
+            role = ALIASES.get(role, role)
+            if not separator or role not in ALL_ROLES or not level or role in efforts:
+                raise RoutingError("Efforts must be unique ROLE=LEVEL pairs")
+            efforts[role] = level
+        preserve_primary = not (args.role == "controller" or "controller" in pins or "controller" in efforts)
+        if args.preserve_primary and not preserve_primary:
+            raise RoutingError("Cannot combine preserve-primary with controller resolution")
         if not args.discover and any(value is not None for value in (
                 args.codex_home, args.cwd, args.profile, args.expected_auth, args.expected_provider)):
             raise RoutingError("Discovery target and expected-auth/provider options require --discover")
@@ -656,7 +704,8 @@ def main(argv=None):
                            profile=args.profile, expected_auth=args.expected_auth,
                            expected_provider=args.expected_provider) if args.discover else read_json(args.catalog)
         result = resolve(payload, read_json(args.policy), pins=pins, excluded=args.exclude,
-                         allowed=args.allowed_model, modalities=args.require_modality, preserve_primary=args.preserve_primary)
+                         allowed=args.allowed_model, modalities=args.require_modality, preserve_primary=preserve_primary,
+                         efforts=efforts, task_kind=args.task_kind)
         if args.output_dir:
             render(result, args.output_dir)
         print(json.dumps(result, indent=2))

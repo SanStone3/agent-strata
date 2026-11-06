@@ -21,7 +21,7 @@ Aliases resolve according to provider and can change. Pin full model IDs only wh
 
 | Control | Mechanism | Default | Strata position |
 |---|---|---|---|
-| Concurrent subagents | `CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS` | 20 | Leave the client default; the policy budget of three active agents is the working limit |
+| Concurrent subagents | `CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS` | 20 | Respect actual host capacity and explicit user/project budgets; Strata adds no fixed numeric limit |
 | Spawn depth | `CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH` | 3 layers below the main conversation | Set to `1` so the no-descendant invariant is enforced by the client, not only by instructions |
 
 - Claude Code's cap is far above the default budget, so the budget is a deliberate policy choice about write safety and synthesis capacity rather than a client restriction. Raise it only by the checklist in [scaling.md](scaling.md).

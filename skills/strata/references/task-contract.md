@@ -1,84 +1,23 @@
-# Runtime task contract
+# Compact task contracts
 
-Read this reference before delegating live work. For budgets, write domains, and wave planning, read [scaling.md](scaling.md).
+Delegate when independent work shortens the critical path, isolates noisy exploration, or adds necessary independent review. Known-file, same-state or small sequential work stays local.
 
-## Decomposition test
-
-Delegate only when at least one is true:
-
-- independent workstreams can run without shared mutable state;
-- read-heavy exploration, logs, or research would pollute the controller context;
-- an independent high-risk review adds meaningful confidence;
-- ownership can be bounded by paths, modules, interfaces, or output artifacts.
-
-Continue in the primary when the task is small, sequential, same-file, or dependent on rapid back-and-forth judgment.
-
-## Task packet
-
-Every delegated packet must state:
+Each packet includes:
 
 ```text
-Objective:
-Relevant context and evidence:
-Write domain: owned writable paths, or read-only
-Explicit exclusions:
-Wave and merge order:
-Permission mode and allowed commands:
-Acceptance evidence:
-Result budget:
-Stop/escalation conditions:
-Required return fields:
+Goal and acceptance checks:
+Relevant file/symbol/contract pointers and verified facts:
+Write domain: explicit paths, or read-only; everything else read-only
+Constraints and stop conditions:
+Result budget: concise findings/changes, evidence, tests, uncertainty
 ```
 
-`Write domain` is a path list, not a module name, and every other path is read-only to that agent. A read-only packet says read-only and names no writable path. `Result budget` caps the returned volume, for example five findings or twenty lines, so that a whole wave still compresses into one coherent state.
+Add ordering and shared-contract information only when needed. Do not forward full conversations, bulk logs or irrelevant project history. Give the child enough evidence to avoid redoing a prior scout's work. Two simultaneous packets must not answer the same question or own the same change.
 
-Do not forward the full user conversation when a compact packet is sufficient. Include project instructions or facts the subagent cannot otherwise access.
-Named custom roles use compact task packets or limited recent-turn forks. Never combine explicit custom type with full-history fork.
+Choose the role, model and effort for the packet before creation. Prefer history-free mixed-model children. Keep a small controller ledger: owner, paths, model/effort, status and evidence pointers. Reuse a child for a related follow-up on the same model when context remains useful; unrelated work or a capability change gets a fresh compact packet. Stop idle/unneeded work through the host lifecycle. Never switch a child model on resume.
 
-Two concurrent packets must not contain the same question or the same change. Duplicated exploration doubles cost and returns the same uncertainty.
+Results report `completed | partial | blocked`, concise findings/changes with locations, validation commands/results, uncertainty and any boundary needing revision. Reviewers return severity-ordered actionable findings, or state no material finding. Suggested budget: five findings or twenty lines, adjusted when completeness requires more.
 
-## Write ownership
+The controller inspects evidence and diffs, reconciles contradictions and runs necessary final checks. Keep full logs in permitted local artifacts; return only failing excerpts and test receipts. Before context compaction preserve decisions, remaining work and evidence pointers, not the tool transcript. Keep this in session state unless the user requested a handoff file.
 
-Default to one writer. Before allowing two or more writers in one wave, verify disjoint path lists, frozen shared contracts, independent per-domain validation, project permission, and safe integration order. If any condition is uncertain, serialize the writes. The full partition procedure and the conditions for raising the concurrency budget are in [scaling.md](scaling.md).
-
-Shared contracts stay with the controller: public interfaces and type declarations, schemas and migrations, generated output, barrel and index files, lockfiles and manifests, formatter and lint configuration, and cross-domain fixtures. Land those changes first, then declare them immutable for the wave.
-
-Scouts and reviewers never edit. A mechanical executor stops when semantic judgment appears.
-
-## Required return
-
-Scout and worker:
-
-```text
-status: completed | partial | blocked
-summary:
-findings_or_changes: concise, with file/symbol evidence
-validation: command or check plus result
-domain_boundary: respected | needed paths outside the domain
-uncertainties:
-residual_risks:
-recommended_next_step:
-```
-
-Reviewer returns findings first, ordered by severity. Each finding contains location, trigger/failure mode, impact, evidence, and verification or mitigation. State explicitly when there is no material finding.
-
-## Controller synthesis
-
-The controller checks returned claims against primary evidence, inspects all writes, resolves contradictions, and runs allowed final validation. It never reports a subagent's unverified statement as completed work.
-
-At a wave gate, inspect the combined state rather than the sum of the reports, then rewrite the next wave's packets from the state that now exists.
-
-When a subagent discovers that its boundary is wrong, stop that packet and rewrite it. Do not let the subagent silently expand scope. When two agents disagree with confidence, treat it as a partition defect and re-cut the boundary rather than averaging the answers.
-
-## Dispatch failures
-
-- A refused spawn at the client cap is scheduling information, not an error to retry. Queue that packet into the next wave. Claude Code reports `Concurrent subagent limit reached` and instructs no retry.
-- Forks occupy a concurrency slot, and resumes take a fresh slot without a limit check; count both against the intended budget.
-- A write conflict stops the wave. Inspect the working tree and serialize the remaining writers; never discard user work to clear a conflict.
-- A `blocked` return changes the plan, not the tier. Do not respawn an unchanged packet at a higher capability tier.
-
-## Effort verification
-
-A `sonnet`/`opus` alias that resolves to a 4.6-class model does not support `xhigh`; the client silently lowers the request to the highest supported level. A configured `xhigh` is not an effective `xhigh` until `/status` or equivalent evidence confirms the resolved model. Otherwise pin a full model ID that supports `xhigh`, or report the coding-worker invariant as unmet.
-
-Fable authentication, billing, rate-limit, request-size, and transport errors do not trigger model fallback. Stop the branch and return control; do not retry.
+If a boundary fails, inspect partial state and rewrite the packet. Children do not widen scope or spawn descendants. Multiple-writer criteria: [scaling.md](scaling.md).

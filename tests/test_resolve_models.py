@@ -53,9 +53,8 @@ class RoutingTests(unittest.TestCase):
                            "deep_worker": "gpt-6.1-sol", "reviewer": "gpt-6.1-sol"}.items():
             self.assertEqual(name, doc["bindings"][role]["model"])
         self.assertFalse(doc["access_verified"])
-        self.assertEqual("gpt-6.1-sol", doc["bindings"]["controller"]["model"])
-        self.assertEqual("xhigh", doc["bindings"]["controller"]["reasoning_effort"])
-        self.assertEqual("inherited", doc["bindings"]["controller"]["sandbox_mode"])
+        self.assertNotIn("controller", doc["bindings"])
+        self.assertEqual("medium", doc["bindings"]["worker"]["reasoning_effort"])
         self.assertEqual("read-only", doc["bindings"]["reviewer"]["sandbox_mode"])
 
     def test_removed_family_pins_and_custom_policy_are_rejected(self):
@@ -103,24 +102,26 @@ class RoutingTests(unittest.TestCase):
                 self.resolve()
 
     def test_controller_avoids_unreviewed_expensive_models(self):
-        doc = self.resolve(catalog(model("gpt-6.2-astra"), model("gpt-6.2-sol")))
+        doc = self.resolve(catalog(model("gpt-6.2-astra"), model("gpt-6.2-sol")), preserve_primary=False)
         self.assertEqual("gpt-6.1-sol", doc["bindings"]["controller"]["model"])
         self.assertTrue(all(x["model"] in self.policy["automatic_models"] for x in doc["bindings"].values()))
 
     def test_explicit_controller_choice_is_respected(self):
-        doc = self.resolve(pins={"controller": "gpt-6.1-sol"})
+        doc = self.resolve(pins={"controller": "gpt-6.1-sol"}, preserve_primary=False)
         self.assertEqual("gpt-6.1-sol", doc["bindings"]["controller"]["model"])
         self.assertTrue(doc["bindings"]["controller"]["pinned"])
         self.assertEqual("balanced", doc["bindings"]["controller"]["tier"])
 
     def test_missing_balanced_tier_does_not_weaken_controller(self):
-        doc = self.resolve({"models": [model("gpt-6-luna")]})
+        doc = self.resolve({"models": [model("gpt-6-luna")]}, preserve_primary=False)
         self.assertIn("controller", doc["unresolved"])
         self.assertNotIn("controller", doc["bindings"])
 
-    def test_controller_requires_xhigh_even_when_pinned(self):
+    def test_controller_recommendation_can_use_explicit_user_effort(self):
         payload = {"models": [{"model": "gpt-6-astra", "efforts": ["high"]}]}
-        self.assertIn("controller", self.resolve(payload, pins={"controller": "gpt-6-astra"})["unresolved"])
+        doc = self.resolve(payload, pins={"controller": "gpt-6-astra"}, preserve_primary=False,
+                           efforts={"controller": "high"})
+        self.assertEqual("high", doc["bindings"]["controller"]["reasoning_effort"])
 
     def test_preserve_primary_roundtrip_and_render(self):
         doc = self.resolve(preserve_primary=True)
@@ -135,6 +136,7 @@ class RoutingTests(unittest.TestCase):
             self.resolve(preserve_primary=True, pins={"controller": "gpt-6-astra"})
 
     def test_new_minor_version_is_numeric_not_lexical(self):
+        self.policy["role_preferences"].pop("worker", None)
         self.policy["automatic_models"] += ["gpt-6.9-sol", "gpt-6.10-sol"]
         doc = self.resolve(catalog(model("gpt-6.9-sol"), model("gpt-6.10-sol")))
         self.assertEqual("gpt-6.10-sol", doc["bindings"]["worker"]["model"])
@@ -145,6 +147,7 @@ class RoutingTests(unittest.TestCase):
         self.assertIn("gpt-99-sol", doc["unclassified"])
 
     def test_explicit_upgrade_adopts_new_name(self):
+        self.policy["role_preferences"].pop("worker", None)
         self.policy["automatic_models"] += ["next-worker", "later-worker"]
         payload = catalog(model("next-worker", upgrade="later-worker"), model("later-worker"))
         payload["data"][5]["upgrade"] = "next-worker"
@@ -180,7 +183,7 @@ class RoutingTests(unittest.TestCase):
     def test_unsupported_new_version_uses_compatible_same_tier(self):
         self.policy["automatic_models"].append("gpt-6-sol")
         payload = catalog()
-        payload["data"][5]["supportedReasoningEfforts"] = ["medium"]
+        payload["data"][5]["supportedReasoningEfforts"] = ["xhigh"]
         self.assertEqual("gpt-6-sol", self.resolve(payload)["bindings"]["worker"]["model"])
 
     def test_user_pin_overrides_newer_model(self):
@@ -204,7 +207,7 @@ class RoutingTests(unittest.TestCase):
             self.assertEqual("medium", doc["bindings"][role]["reasoning_effort"])
             self.assertFalse(doc["bindings"][role]["pinned"])
         self.assertEqual(["gpt-6-luna"], doc["bindings"]["scout"]["alternatives"])
-        self.assertEqual("gpt-6.1-sol", doc["bindings"]["controller"]["model"])
+        self.assertNotIn("controller", doc["bindings"])
         self.assertFalse(doc["access_verified"])
         self.assertEqual(doc["bindings"], R.verify_binding(doc, self.policy)["bindings"])
         self.policy["role_preferences"]["scout"].reverse()
@@ -283,6 +286,7 @@ class RoutingTests(unittest.TestCase):
         self.assertEqual("gpt-6.2-sol", self.resolve(payload, pins={"worker": "gpt-6.2-sol"})["bindings"]["worker"]["model"])
 
     def test_explicit_classification_requires_evidence(self):
+        self.policy["role_preferences"].pop("worker", None)
         self.policy["automatic_models"].append("org-model")
         self.policy["models"]["org-model"] = {"tier": "balanced", "priority": 30}
         with self.assertRaisesRegex(R.RoutingError, "evidence"):
@@ -393,7 +397,8 @@ class RoutingTests(unittest.TestCase):
             self.assertIn('model = "gpt-6.1-sol"', (directory / "agents/worker.toml").read_text())
             text = (directory / "config-snippet.toml").read_text()
             self.assertIn('model = "gpt-6.1-sol"', text)
-            self.assertIn('model_reasoning_effort = "xhigh"', text)
+            self.assertNotIn('\nmodel_reasoning_effort =', text)
+            self.assertIn('default_subagent_reasoning_effort = "medium"', text)
             self.assertNotIn('model_context_window =', text)
             with self.assertRaisesRegex(R.RoutingError, "already exists"):
                 R.render(self.resolve(), directory)

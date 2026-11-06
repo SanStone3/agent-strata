@@ -1,60 +1,51 @@
-# Installation workflow
+# Install or update
 
-Use this reference only when installing, upgrading, or changing scope.
+Share skill source; keep each client's config, agents, login and context-bound manifests separate.
 
-## Scope map
-
-| Client | Global | Project |
+| Item | Codex personal | Project |
 |---|---|---|
-| Codex skill | `~/.agents/skills/strata/` | `<repo>/.agents/skills/strata/` |
-| Codex config | `~/.codex/config.toml` | `<repo>/.codex/config.toml` |
-| Codex agents | `~/.codex/agents/` | `<repo>/.codex/agents/` |
-| Codex rules | `~/.codex/AGENTS.md` | `<repo>/AGENTS.md` |
-| Claude skill | `~/.claude/skills/strata/` | `<repo>/.claude/skills/strata/` |
-| Claude config | `~/.claude/settings.json` | `<repo>/.claude/settings.json` |
-| Claude agents | `~/.claude/agents/` | `<repo>/.claude/agents/` |
-| Claude rules | `~/.claude/CLAUDE.md` | `<repo>/CLAUDE.md` |
+| Skill | `~/.agents/skills/strata` | `.agents/skills/strata` |
+| Config / agents | actual `CODEX_HOME/config.toml`, `CODEX_HOME/agents` | `.codex/config.toml`, `.codex/agents` |
+| Rules | actual `CODEX_HOME/AGENTS.md` | `AGENTS.md` |
 
-Codex's current official personal skill location is `~/.agents/skills/`. Existing environments may also expose legacy or installer-managed locations. Use the active client's discovery output rather than relocating a working install without need.
+Claude uses `~/.claude/skills`, `~/.claude/agents`, `~/.claude/settings.json`, `~/.claude/CLAUDE.md` or project equivalents. Keep Claude model/effort policy independent; see [claude.md](claude.md).
 
-A shared personal package at `~/.agents/skills/strata/` can serve CLI and IDE instances on the same machine when both discover that location. Custom role definitions, config and bindings instead belong to each client's **actual** `CODEX_HOME`, which may differ from `~/.codex`. Confirm discovery through each matching client's `skills/list`; do not assume the VS Code extension uses the shell's home or executable. See [auth-context.md](auth-context.md).
+## Shared main checkout
 
-## Safe merge procedure
+For a maintained single source, clone the public repository's `main` branch, then link discovered skill locations to `<checkout>/skills/strata`. Inspect and back up existing directories before replacing them with links. Preserve local improvements by integrating them before replacement. Do not copy credentials or provider-specific bindings into the repository.
 
-1. Identify the home directory or repository root explicitly. Never use an unresolved variable as a destructive target.
-2. Read every target file and list same-name Agent definitions.
-3. Record client version and current model. For Claude, check whether Fable appears or can be selected only if the user wants Fable.
-4. Create timestamped backups of existing files. Do not back up secrets into the repository.
-5. Merge syntax-aware:
-   - TOML: add or update only the requested keys/tables.
-   - JSON: preserve every unrelated object and array, and add environment keys inside the existing `env` object.
-   - Markdown rules: append or update one delimited `Layered Agent Orchestration` section.
-   - Agent files: compare before replacement; preserve user customization or obtain direction.
-6. For Codex, follow [model-routing.md](model-routing.md) to obtain the current catalog, preserve user pins, resolve and render all roles into a new staging directory. Merge the generated definitions and agent defaults, using the cost-aware Sol controller recommendation at `xhigh` unless explicitly pinned or preserved, while retaining context settings. Copy Claude templates independently. Never install bare Codex model-free source templates as resolved agents.
-7. Configure the concurrency controls for the client:
-   - Codex: pin `agents.max_concurrent_threads_per_session = 3` unless the user asked for a different ceiling, then verify the observed parallelism as described in [codex.md](codex.md).
-   - Claude Code: set `CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH` to `1` so the no-descendant invariant is client-enforced, and leave the concurrent-subagent ceiling at the client default; see [claude.md](claude.md).
-8. Parse all resulting files and run [validation.md](validation.md).
-9. Inspect client status for the actually resolved model and effort. A requested `xhigh` is not sufficient evidence: if a Claude alias resolves to a model without `xhigh`, pin an organization-approved compatible full ID or report the invariant as unmet.
-10. Report backups, changed paths, effective model/effort, effective concurrency cap and spawn depth, conflicts, and whether a new session is required.
-
-## Boundaries
-
-- Do not enable bypass permissions or widen tool allowlists.
-- Do not raise a concurrency ceiling above the default budget unless the user asked for it, and never enable an unrelated feature flag to make a limit change take effect.
-- Do not add API keys, usage credits, payment settings, or external bridge processes.
-- Do not make Codex invoke Claude or Claude invoke Codex.
-- Do not assume fallback handles authentication, billing, rate-limit, request-size, or transport errors.
-- Do not commit global configuration. Project configuration may be committed only when the user requested shared project setup and project rules permit it.
-- If a managed organization setting blocks a recommendation, report it as authoritative.
-
-## AI-facing prompt
-
-After installing this skill, a user can ask:
-
-```text
-Use strata to install Agent Strata for this client at global scope.
-Inspect and back up the existing configuration, merge without overwriting unrelated settings,
-keep coding workers at xhigh, keep the default concurrency budget, validate the result,
-and do not configure cross-provider calls.
+```bash
+git clone --branch main https://github.com/SanStone3/agent-strata.git /path/to/agent-strata
+# After checking and backing up any existing target:
+ln -s /path/to/agent-strata/skills/strata /path/to/discovered-skills/strata
 ```
+
+All linked projects then read the same source. **A symlink tracks the checkout, not remote pushes automatically.** On an authorized update inspect status/remotes, fetch main and fast-forward only; preserve a dirty/diverged checkout for inspection. Do not reset/stash/rewrite local work.
+
+```bash
+git -C /path/to/agent-strata fetch origin main
+git -C /path/to/agent-strata merge --ff-only origin/main
+```
+
+No background updater is installed. Fetch/update at an authorized maintenance point, not on every model turn. Restart/reload only when the client requires it and no active task is disrupted. Model policy changes invalidate prior fingerprints; regenerate bindings per client before dispatching changed named roles.
+
+A snapshot installation is also available:
+
+```bash
+npx -y skills@1.5.23 add SanStone3/agent-strata -g -a codex -s strata -y
+```
+
+That installer is [Vercel's CLI](https://github.com/vercel-labs/skills), not native Codex; a copied snapshot needs a later explicit update.
+
+## Merge client configuration
+
+1. Identify the actual executable/home/scope and read target files. Back up changed files outside the public repository; exclude secrets.
+2. Native runtime model/effort overrides can route new children directly. For definition-only clients, resolve a fresh matching-client catalog and render into a new staging directory; see [model-routing.md](model-routing.md).
+3. Merge only the generated agent table, definitions and one delimited rules section. Preserve user customizations, primary model/effort/context, provider, auth, permissions, MCP and hooks. Source templates are not resolved agents.
+4. Keep concurrency unset in Strata templates. Remove a known old Strata three-agent pin during this requested upgrade; preserve explicit user/project limits and actual host capacity. Default to one writer.
+5. Claude installation separately merges its templates and spawn depth policy; do not alter its model policy as part of a Codex refresh.
+6. Parse and run [validation](validation.md). Verify skill discovery and effective role model/effort in the intended client; catalog/structural checks do not prove inference access. New definitions may need a new session; do not restart an active client automatically.
+
+Primary `controller` resolution is advisory only. Rendering never writes primary settings; a user's subsequent CLI/App switch is expected, not configuration drift. Do not install an auto-updater that resets it.
+
+Uninstall by removing only known links, merged Strata keys and managed rule sections from the change record, preserving later user edits. Keep pre-install backups until verification. A skill uninstall does not remove independently installed agent/config files.

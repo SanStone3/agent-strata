@@ -1,111 +1,33 @@
-# Validation and troubleshooting
-
-## Source package
-
-From the repository root:
+# Validation
 
 ```bash
 python3 skills/strata/scripts/validate.py --repo .
 python3 -m unittest discover -s tests -v
-npx -y skills@1.5.23 add . --list
+# Optional if the matching skill-creator is installed:
+python3 /path/to/skill-creator/scripts/quick_validate.py skills/strata
 ```
 
-From an installed skill directory, validate the package alone:
+Installed package alone: `python3 scripts/validate.py`. Active client checks are opt-in and read-only:
 
 ```bash
-python3 scripts/validate.py
-```
-
-If OpenAI's `skill-creator` is installed, also run its `quick_validate.py` against `skills/strata`.
-
-## Explicit Codex home check
-
-To inspect an active Codex setup, pass its home directory explicitly:
-
-```bash
-python3 skills/strata/scripts/validate.py --repo . --codex-home /path/to/codex-home
-```
-
-This is read-only and checks only `/path/to/codex-home/config.toml`, its five stable `agents/*.toml` files (or legacy migration names when a stable file is absent), and `/path/to/codex-home/AGENTS.md`. `--repo` validates the source package; `--codex-home` validates those active-client invariants without requiring whole-file equality. An installed home may pin a concurrency ceiling above the default budget when the user asked for it, so the installed check accepts a positive value while the template must stay at `3`. Without `--codex-home`, validation does not inspect a default home or claim to validate an active client.
-
-Use `--bindings /path/to/model-bindings.json` from a fresh resolver run to verify the controller and installed subagent models against catalog capabilities and the routing policy. Controller configuration drift is an error unless the binding was generated with `--preserve-primary`. Without it, availability/tier compatibility is explicitly unverified. For an external policy add `--model-policy /path/to/policy.json`; for project scope add `--codex-rules /path/to/project/AGENTS.md`. Source Codex templates must omit model IDs; installed definitions must contain resolved IDs. See [model-routing.md](model-routing.md) for discovery, rendering, migration and bounded recovery.
-
-For two Codex logins, run one check per actual home. A context-bound manifest from the account-login home must not validate an API-key home, even when both catalogs list identical model IDs. Use `--codex-profile NAME` for a named profile and `--runtime-context /path/to/fresh-discovery.json` to compare full current context. Profile files follow the current client contract: `<CODEX_HOME>/<name>.config.toml`. Older client formats require version-specific adaptation, not silent fallback.
-
-## Explicit Claude home check
-
-To inspect an active Claude Code setup:
-
-```bash
+python3 skills/strata/scripts/validate.py --repo . --codex-home /path/to/home \
+  --bindings /path/to/fresh/model-bindings.json
 python3 skills/strata/scripts/validate.py --repo . --claude-home /path/to/claude-home
 ```
 
-This is read-only and checks `/path/to/claude-home/settings.json` (`model`, `effortLevel`, and `env.CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH`) and its seven expected `agents/*.md` files against the tier invariants: model alias, effort, tool lists, `maxTurns`, and the no-descendant prohibition. It also checks that `/path/to/claude-home/CLAUDE.md` still states the core policies: default budget of three active subagents, one writer by default, the conditions for raising the budget, disjoint write domains, no descendants, and no cross-provider invocation. The patterns tolerate reworded personal variants, so a customized rules file passes as long as the policies survive.
+Codex checks five roles, models, selected efforts, boundaries and rules. Templates omit primary keys and numeric concurrency caps; installed configs may have explicit positive user caps or omit them. Current user primary selection is never compared with an old controller recommendation. Bindings are recomputed from their catalog/policy/context; no manifest means model availability/tier compatibility remains unverified.
 
-## Installed configuration
+Use each login's actual CODEX_HOME. `--runtime-context` compares fresh host/auth/provider/executable identity; `--codex-profile NAME` selects its `<home>/<name>.config.toml`; `--model-policy` selects an approved custom policy; `--codex-rules` supports project rules above `.codex`. Never reuse another login's binding or publish catalogs containing private context.
 
-Check, without exposing secrets:
+Claude validation retains its independent alias/effort/tool/spawn-depth contracts. It does not prove the provider's alias resolves to a compatible model.
 
-1. Skill discovery reports `strata` for the intended client and scope.
-2. TOML, JSON, YAML frontmatter, and `agents/openai.yaml` parse successfully.
-3. Each native Agent definition has required frontmatter/keys and a unique name.
-4. Scouts/reviewers have read-only tools or sandbox defaults.
-5. Code Workers and consequential Reviewers explicitly request `xhigh`, and client status confirms the resolved model actually supports and uses it.
-6. No Agent instruction invokes the other provider, commits, pushes, deploys, or spawns descendants. On Claude Code, `CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH` is `1` so this is also enforced mechanically.
-7. The rules section states the default budget of three active subagents and one writer, that the budget caps concurrency rather than total work, the conditions for raising it, disjoint write domains with frozen shared contracts, no descendant or cross-provider invocation, and compact or limited forks for named custom roles.
-8. The effective concurrency cap is known and recorded, not merely requested: for Codex, confirmed by observed parallelism; for Claude Code, the client default unless the user asked for another ceiling.
-9. Existing unrelated settings remain present.
+Verification levels:
 
-## Behavioral smoke test
+1. Structure: parse files, references and roles; no secrets/private paths.
+2. Discovery: the intended client sees skill and role definitions/catalog entries.
+3. Native execution: an authorized packet actually runs with the expected model/effort and permissions.
+4. Acceptance: returned changes and meaningful task checks pass.
 
-Use a disposable or read-only task:
+Do not present level 1 or 2 as level 3 or 4. Use authorized work for native verification; no paid benchmark solely for installation. If testing capacity is requested, use disposable read-only packets and respect host refusal without looping.
 
-```text
-Map the three most relevant code paths for this bug using a read-only scout.
-Return only file/symbol evidence, uncertainty, and the recommended next step.
-```
-
-Then use a temporary small implementation and observe that the controller assigns only one writing worker and reviews its returned diff.
-
-To test the budget itself, request a read-only wave of one more agent than the intended budget and observe the client's actual parallelism and its refusal behavior. Do not run that test with writers.
-
-## Common failures
-
-### Skill installed but not visible
-
-- Confirm the reported path with `npx skills list -g --json` or project-level `npx skills list --json`.
-- Restart the client if the top-level skill directory was created after session startup.
-- Check YAML frontmatter and directory name.
-
-### Custom agents not visible
-
-- Verify the scope path and unique `name` values.
-- Restart after first creating the agents directory.
-- For Codex project agents, verify project trust without changing it implicitly.
-- For Claude, use `/doctor` and inspect current scope precedence.
-
-### Wrong effort or model
-
-- Check runtime/session overrides, environment variables, managed settings, and custom Agent fields in precedence order.
-- Do not claim the configured value is effective until the client status confirms it. Claude aliases that resolve to 4.6-class models can lower `xhigh` to `high`; pin an approved compatible full model ID or report the invariant as unmet.
-- If an alias resolves differently on a third-party provider, pin an approved full model ID.
-
-### A raised concurrency ceiling has no effect
-
-- Confirm which configuration file and scope the client actually loads.
-- Observe real parallelism instead of trusting the requested key. On Codex, a build whose multi-agent feature owns concurrency ignores the older key; confirm the honored key against that version's documentation before touching feature tables.
-- On Claude Code, a spawn refusal reports `Concurrent subagent limit reached` and instructs no retry. Queue the packet rather than raising the ceiling, unless the user asked for a higher one.
-- Remember that forks consume a slot and resumes bypass the limit check, so observed parallelism can exceed the configured ceiling without any error.
-
-### Descendant agents appear
-
-- On Claude Code, set `CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH` to `1` and start a new session.
-- Confirm every Agent definition still carries the no-descendant prohibition; a replaced or user-edited definition is the usual cause.
-
-### Fable fails
-
-Return the exact availability, quota, billing, or version condition. Do not loop. Claude fallback is not triggered by authentication, billing, rate-limit, request-size, or transport errors.
-
-### Too many write conflicts
-
-Stop the wave, inspect the working tree, and reassign one writer at a time. Re-partition the write domains before the next parallel attempt, and pull every shared path into controller scope. Do not use destructive Git cleanup to erase user work.
+For failures inspect active client precedence and actual schema. Missing roles may require a session reload. Unsupported effort remains unresolved; authentication/quota/transport errors do not trigger model cycling. Encrypted-region/history errors: [auth-context.md](auth-context.md). Conflicting writers: stop affected work, inspect and serialize; do not erase user changes.

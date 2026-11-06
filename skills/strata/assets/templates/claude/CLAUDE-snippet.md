@@ -4,7 +4,7 @@
 For complex work with independent workstreams or noisy bounded exploration, use the `strata` skill and native Claude Code subagents. Keep the current main session as the sole controller and final owner.
 
 - Do not delegate small, sequential, or same-file tasks.
-- Keep at most three active subagents and one writer by default. The budget caps concurrency, not total work: additional packets run as further waves.
+- Strata imposes no fixed numeric subagent limit. Choose concurrency from useful independent tasks, actual host slots, resource headroom and explicit user/project budgets. Keep one writer by default; verified disjoint domains may use multiple writers. The budget caps concurrency, not total work: additional packets run as further waves.
 - Raise the budget only for read-only fan-out, or for writers holding disjoint write domains with frozen shared contracts, one validation command per domain, and capacity to inspect every write before the next wave. Otherwise serialize the writes.
 - Land shared interface, schema, manifest, lockfile, and generated-artifact changes in the main session before a parallel wave, then treat them as immutable for that wave.
 - Use `haiku-scout` for read-only exploration.

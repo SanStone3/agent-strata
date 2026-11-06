@@ -64,7 +64,7 @@ Keep the controller's authentication/provider inherited by its native children. 
 
 ## Install and validate independently
 
-Back up each target home before merging its own rendered configuration. Preserve provider tables, credential-store settings, account files, endpoint URLs, unrelated plugins, trust entries and context limits. Do not apply a controller/model recommendation unsupported by that provider; use an approved policy/pin or leave the role unresolved. Preserve the user's primary setting explicitly with `--preserve-primary` when needed.
+Back up each target home before merging its own rendered configuration. Preserve provider tables, credential-store settings, account files, endpoint URLs, unrelated plugins, trust entries and context limits. Do not apply a controller/model recommendation unsupported by that provider; use an approved policy/pin or leave the role unresolved. Primary settings are preserved by default; `--preserve-primary` remains a compatible explicit flag.
 
 Run one validation per home:
 
