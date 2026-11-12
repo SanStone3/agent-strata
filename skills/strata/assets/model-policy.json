@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "reviewed_on": "2026-11-06",
+  "reviewed_on": "2026-11-12",
   "sources": [
     "https://developers.openai.com/api/docs/models/gpt-6.1-terra",
     "https://developers.openai.com/api/docs/models/gpt-6.1-sol",
@@ -8,7 +8,8 @@
     "https://learn.chatgpt.com/docs/pricing",
     "https://learn.chatgpt.com/docs/app-server#models",
     "https://developers.openai.com/api/docs/guides/model-selection",
-    "https://artificialanalysis.ai/zh/models/creators/openai"
+    "https://artificialanalysis.ai/zh/models/creators/openai",
+    "https://artificialanalysis.ai/models/comparisons/gpt-6-1-terra-medium-vs-gpt-6-1-sol-medium"
   ],
   "families": [
     {
@@ -31,7 +32,7 @@
     "gpt-6.1-terra": {
       "tier": "bounded",
       "priority": 20,
-      "evidence": "https://developers.openai.com/api/docs/models/gpt-6.1-terra; local bounded-worker policy reviewed 2026-10-27, not a Sol-equivalence claim"
+      "evidence": "https://artificialanalysis.ai/models/comparisons/gpt-6-1-terra-medium-vs-gpt-6-1-sol-medium (2026-11-12); use for bounded implementation with task-specific acceptance checks"
     }
   },
   "pins": {},
@@ -75,8 +76,8 @@
       "gpt-6-luna"
     ],
     "worker": [
-      "gpt-6.1-sol",
-      "gpt-6.1-terra"
+      "gpt-6.1-terra",
+      "gpt-6.1-sol"
     ],
     "deep_worker": [
       "gpt-6.1-sol"

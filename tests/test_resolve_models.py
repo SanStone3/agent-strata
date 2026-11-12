@@ -47,9 +47,9 @@ class RoutingTests(unittest.TestCase):
         return R.resolve(payload or catalog(), self.policy, **kw)
 
     def test_current_roles_and_efforts(self):
-        doc = self.resolve()
+        doc = self.resolve(catalog(model("gpt-6.1-terra")))
         self.assertEqual({}, doc["unresolved"])
-        for role, name in {"scout": "gpt-6-luna", "executor": "gpt-6-luna", "worker": "gpt-6.1-sol",
+        for role, name in {"scout": "gpt-6-luna", "executor": "gpt-6-luna", "worker": "gpt-6.1-terra",
                            "deep_worker": "gpt-6.1-sol", "reviewer": "gpt-6.1-sol"}.items():
             self.assertEqual(name, doc["bindings"][role]["model"])
         self.assertFalse(doc["access_verified"])

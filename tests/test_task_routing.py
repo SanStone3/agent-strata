@@ -21,23 +21,26 @@ class TaskRoutingTests(unittest.TestCase):
     def resolve(self, **kw):
         return R.resolve(self.catalog, self.policy, **kw)
 
-    def test_coding_prefers_sol_scoped_prefers_terra(self):
-        self.assertEqual('gpt-6.1-sol', self.resolve()['bindings']['worker']['model'])
-        doc = self.resolve(task_kind='scoped')
-        self.assertEqual('gpt-6.1-terra', doc['bindings']['worker']['model'])
-        self.assertEqual('medium', doc['bindings']['worker']['reasoning_effort'])
-        self.assertNotIn('controller', doc['bindings'])
+    def test_both_task_kinds_prefer_terra_for_ordinary_coding(self):
+        for task_kind in ('coding', 'scoped'):
+            for effort in ('medium', 'high'):
+                with self.subTest(task_kind=task_kind, effort=effort):
+                    doc = self.resolve(task_kind=task_kind, efforts={'worker': effort})
+                    self.assertEqual('gpt-6.1-terra', doc['bindings']['worker']['model'])
+                    self.assertEqual(effort, doc['bindings']['worker']['reasoning_effort'])
+                    self.assertNotIn('controller', doc['bindings'])
 
     def test_complex_roles_cannot_be_downgraded_to_terra(self):
         for role in ('deep_worker', 'reviewer'):
             doc = self.resolve(pins={role: 'gpt-6.1-terra'})
             self.assertIn(role, doc['unresolved'])
         doc = self.resolve(excluded=['gpt-6.1-sol'])
-        self.assertTrue({'worker', 'deep_worker', 'reviewer'} <= doc['unresolved'].keys())
+        self.assertEqual({'deep_worker', 'reviewer'}, doc['unresolved'].keys())
+        self.assertEqual('gpt-6.1-terra', doc['bindings']['worker']['model'])
 
-    def test_scoped_fallback_filters_and_pin(self):
+    def test_worker_fallback_filters_and_pin(self):
         for kw in ({'excluded': ['gpt-6.1-terra']}, {'allowed': ['gpt-6-luna', 'gpt-6.1-sol']}):
-            doc = self.resolve(task_kind='scoped', **kw)
+            doc = self.resolve(**kw)
             self.assertEqual('gpt-6.1-sol', doc['bindings']['worker']['model'])
         doc = self.resolve(task_kind='scoped', pins={'worker': 'gpt-6.1-terra'}, excluded=['gpt-6.1-terra'])
         self.assertIn('worker', doc['unresolved'])
@@ -60,14 +63,14 @@ class TaskRoutingTests(unittest.TestCase):
         doc = self.resolve(preserve_primary=False)
         self.assertEqual('gpt-6-astra', doc['bindings']['controller']['model'])
 
-    def test_cli_coding_does_not_silently_downgrade(self):
+    def test_cli_worker_resolves_without_sol_but_deep_worker_does_not(self):
         self.catalog['models'] = self.catalog['models'][:2]
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / 'catalog.json'
             path.write_text(json.dumps(self.catalog))
             with contextlib.redirect_stdout(io.StringIO()):
-                self.assertEqual(2, R.main(['--catalog', str(path), '--role', 'worker']))
-                self.assertEqual(0, R.main(['--catalog', str(path), '--role', 'worker', '--task-kind', 'scoped']))
+                self.assertEqual(0, R.main(['--catalog', str(path), '--role', 'worker']))
+                self.assertEqual(2, R.main(['--catalog', str(path), '--role', 'deep_worker']))
 
     def test_modality_evidence_required(self):
         self.catalog['models'][1]['inputModalities'] = ['text']
@@ -113,7 +116,8 @@ class TaskRoutingTests(unittest.TestCase):
                 self.assertEqual('high', config['agents']['default_subagent_reasoning_effort'])
                 worker = validator.load_toml(out / 'agents/worker.toml')
                 self.assertEqual('high', worker['model_reasoning_effort'])
-                self.assertEqual('gpt-6.1-sol', worker['model'])
+                self.assertEqual('gpt-6.1-terra', worker['model'])
+                self.assertEqual(worker['model'], config['agents']['default_subagent_model'])
 
 
 if __name__ == '__main__':

@@ -308,17 +308,15 @@ def resolve(payload, policy, *, pins=None, excluded=(), allowed=None, modalities
                 if name != pin or (role != "controller" and TIERS[info["tier"]] < TIERS[tier]):
                     continue
             elif role == "worker":
-                # Coding stays on Sol; scoped work may use Terra, but its higher
-                # reasoning cost is not an automatic xhigh savings strategy.
-                if info["tier"] not in ({"balanced"} if task_kind == "coding" or effort == "xhigh"
-                                        else {"bounded", "balanced"}):
+                # Prefer Terra for ordinary implementation. At xhigh, use Sol
+                # unless the caller explicitly pinned another eligible model.
+                eligible_tiers = {"balanced"} if effort == "xhigh" else {"bounded", "balanced"}
+                if info["tier"] not in eligible_tiers:
                     continue
             elif info["tier"] != tier:
                 continue
             candidates.append(name)
         preferences = policy.get("role_preferences", {}).get(role, [])
-        if role == "worker" and task_kind == "scoped":
-            preferences = ["gpt-6.1-terra", "gpt-6.1-sol"]
         preference_rank = {name: len(preferences) - index for index, name in enumerate(preferences)}
         candidates.sort(key=lambda n: (preference_rank.get(n, 0), known[n]["rank"], models[n]["isDefault"], n), reverse=True)
         if not candidates:
@@ -674,7 +672,7 @@ def main(argv=None):
     parser.add_argument("--role", choices=list(ALL_ROLES) + list(ALIASES), help="require only this role to resolve")
     parser.add_argument("--preserve-primary", action="store_true", help="resolve only subagents; leave primary model and effort unchanged")
     parser.add_argument("--task-kind", choices=("coding", "scoped"), default="coding",
-                        help="worker preference: Sol for coding; Terra for bounded, readily checked tasks")
+                        help="compatibility option; coding and scoped both use the same worker policy")
     parser.add_argument("--effort", action="append", default=[], metavar="ROLE=LEVEL",
                         help="choose supported task effort without changing capability/write boundaries")
     parser.add_argument("--output-dir", type=Path, help="render all roles into a new staging directory")

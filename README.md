@@ -6,13 +6,13 @@ Codex 主控始终跟随用户在 CLI/App 中的当前模型和推理强度，�
 
 ## 当前 GPT 分工
 
-核对日期：2026-11-06。以下是选型起点，实际以同任务的验收结果、重试、耗时和总费用决定。
+路由更新于 2026-11-12。按同类任务的验收结果、重试、耗时和总费用调整。
 
 | 模型 | 建议任务 | 子任务推理强度 |
 |---|---|---|
-| GPT-6.1 Sol `gpt-6.1-sol` | 编码、代理任务、根因分析；复杂实现和关键审查 | 普通 worker `medium`；复杂任务 `high/xhigh` |
-| GPT-6.1 Terra `gpt-6.1-terra` | 明确可验收的普通修复、基于材料写作、读图、填表和计算机操作 | `medium/high`，不固定 `xhigh` |
-| GPT-6 Luna `gpt-6-luna` | 范围明确的提取、摘要、搜索和机械操作 | `low/medium` |
+| GPT-6.1 Terra `gpt-6.1-terra` | 普通功能、修复、重构、测试，以及有明确验收的写作和视觉任务 | `worker` 默认 `medium`，较难的有界任务用 `high` |
+| GPT-6 Luna `gpt-6-luna` | 独立代码定位、日志取证、摘要和机械操作 | `scout`、`executor` 默认 `medium`，简单任务用 `low` |
+| GPT-6.1 Sol `gpt-6.1-sol` | 跨模块根因、复杂实现和关键审查 | `deep_worker`、`reviewer` 用 `high/xhigh` |
 | GPT-6 Astra `gpt-6-astra` | 跨代码、浏览器与专业软件的高难度长流程评估 | 显式选择，不自动回退 |
 
 [官方 Standard 短上下文 API 定价](https://developers.openai.com/api/docs/pricing)，单位为美元 / 百万 token：
@@ -24,13 +24,13 @@ Codex 主控始终跟随用户在 CLI/App 中的当前模型和推理强度，�
 | Luna 6 | 0.10 | 0.01 | 0.50 |
 | Astra 6 | 10 | 1 | 50 |
 
-Terra 的 token 单价是 Sol 的一半，但总任务成本还取决于推理 token 和返工。[Artificial Analysis 的 Sol medium](https://artificialanalysis.ai/zh/models/gpt-6-1-sol-medium) 与 [Terra xhigh](https://artificialanalysis.ai/zh/models/gpt-6-1-terra-xhigh) 当日 v5.0.1 数据分别为：指数 46 / 45、每任务 $0.36 / $0.40、4.2 / 6.1 分钟。因此，编码基线用 Sol medium；不把 Terra 升到 xhigh 当作通用省钱方案。该评测不能预测每个仓库任务。
+Artificial Analysis 的同档评测中，Terra medium 平均每任务花费 $0.17，耗时 2.7 分钟。Sol medium 为 $0.36 和 4.2 分钟。Strata 据此把 Terra medium 作为普通编码的起点，以实际测试和返工决定是否升级。 [Artificial Analysis 同档对照](https://artificialanalysis.ai/models/comparisons/gpt-6-1-terra-medium-vs-gpt-6-1-sol-medium)
 
 完整的输入 / 输出价格、任务耗时、成本、智能、速度、延迟和上下文窗口见 [成本与质量依据](skills/strata/references/cost-control.md)。API 最大窗口不等于 Codex 当前可用窗口；订阅额度、API 美元和第三方网关费用分别核算。
 
 ## 编排与上下文
 
-小型顺序工作直接用工具。独立工作值得委派时，主控分配明确任务包，指定文件 / 契约、可写路径、验收和停止条件。子 Agent 返回结论、位置、测试和不确定性，不回传完整日志。
+多步任务优先找一项可独立验收的工作交给子 Agent，例如实现一个范围明确的修复，或在主控实现期间定位现有测试。小型顺序工作直接用工具。任务包写明文件、契约、可写路径、验收和停止条件。子 Agent 返回结论、位置、测试和不确定性。
 
 ```mermaid
 flowchart LR
@@ -70,7 +70,7 @@ npx -y skills@1.5.23 add SanStone3/agent-strata -g -a codex -s strata -y
 # 使用当前工具目录，或 --discover 发现匹配客户端的目录。
 python3 skills/strata/scripts/resolve_models.py --catalog /path/to/models.json
 python3 skills/strata/scripts/resolve_models.py --catalog /path/to/models.json \
-  --task-kind scoped --effort worker=high --role worker
+  --effort worker=high --role worker
 python3 skills/strata/scripts/resolve_models.py --catalog /path/to/models.json \
   --output-dir /path/to/new-staging-dir
 
@@ -78,7 +78,7 @@ python3 skills/strata/scripts/validate.py --repo .
 python3 -m unittest discover -s tests -v
 ```
 
-默认解析仅管理子 Agent，生成物始终不含主控 model/effort/context 键。`--pin ROLE=MODEL` 尊重明确选择；`--effort ROLE=LEVEL` 按任务指定强度，必须被角色及当前模型支持。`--task-kind scoped` 为可快速验收的有界任务优先 Terra；默认编码优先 Sol。复杂角色不降到 Terra，Astra 和未经核价新模型不进入自动候选，GPT-5.6 已移除。
+解析器默认生成子 Agent 配置。普通 `worker` 优先 Terra medium，Sol 作为符合条件的同档回退。`--pin ROLE=MODEL` 指定模型，`--effort ROLE=LEVEL` 指定角色与模型都支持的强度。旧的 `--task-kind coding` 和 `--task-kind scoped` 参数共用同一套普通 `worker` 策略。
 
 结构校验与目录发现不证明实际推理权限或任务质量。必要时通过已授权的原生任务核验，不因安装额外运行付费基准。详见 [模型路由](skills/strata/references/model-routing.md)、[验证等级](skills/strata/references/validation.md) 和 [独立登录 / SSH](skills/strata/references/auth-context.md)。
 
