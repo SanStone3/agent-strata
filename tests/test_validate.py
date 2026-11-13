@@ -30,7 +30,7 @@ class ValidatorMutationTests(unittest.TestCase):
         self.codex_home.mkdir()
         template = self.skill / "assets" / "templates" / "codex"
         policy = VALIDATE.ROUTING.read_json(self.skill / "assets/model-policy.json")
-        catalog = {"models": [{"model": name, "efforts": ["medium", "xhigh"]}
+        catalog = {"models": [{"model": name, "efforts": ["medium", "high", "xhigh"]}
                               for name in ("gpt-6-luna", "gpt-6.1-sol", "gpt-6-astra")]}
         self.binding = VALIDATE.ROUTING.resolve(catalog, policy)
         staging = Path(self.temporary.name) / "rendered"

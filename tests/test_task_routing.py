@@ -38,6 +38,18 @@ class TaskRoutingTests(unittest.TestCase):
         self.assertEqual({'deep_worker', 'reviewer'}, doc['unresolved'].keys())
         self.assertEqual('gpt-6.1-terra', doc['bindings']['worker']['model'])
 
+    def test_deep_worker_xhigh_keeps_sol_and_workspace_boundary(self):
+        doc = self.resolve(efforts={'deep_worker': 'xhigh'})
+        worker = doc['bindings']['deep_worker']
+        self.assertEqual(('gpt-6.1-sol', 'xhigh', 'workspace-write'),
+                         (worker['model'], worker['reasoning_effort'], worker['sandbox_mode']))
+        with tempfile.TemporaryDirectory() as tmp:
+            output = Path(tmp) / 'rendered'
+            R.render(doc, output)
+            role = VALIDATE.Validator(None, SKILL).load_toml(output / 'agents/deep-worker.toml')
+            self.assertEqual(worker['reasoning_effort'], role['model_reasoning_effort'])
+            self.assertEqual(worker['model'], role['model'])
+
     def test_worker_fallback_filters_and_pin(self):
         for kw in ({'excluded': ['gpt-6.1-terra']}, {'allowed': ['gpt-6-luna', 'gpt-6.1-sol']}):
             doc = self.resolve(**kw)

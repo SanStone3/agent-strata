@@ -8,7 +8,7 @@ active = min(actual host slots, useful independent packets,
 writers = verified disjoint write domains   # default 1
 ```
 
-Parallelize only when saved critical-path time is worth additional context, reasoning and integration cost. Batch related tiny lookups into one packet. Keep dependent work sequential. Count running forks and resumed children; queue excess packets instead of probing the cap repeatedly. When capacity is unknown, start with useful conservative work and use host responses; do not invent unlimited capacity or change feature flags.
+Compare the delivery path with and without the child. Count overlapping work once for elapsed time and sum the usage of every branch. Include handoff, integration and required checks. Start with one useful child and add work when it shortens the delivery path or supplies required independent evidence. Batch related tiny lookups. Keep dependent work sequential. Count running forks and resumed children and queue excess packets against the actual host capacity.
 
 Multiple writers require all of:
 

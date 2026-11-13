@@ -1,89 +1,68 @@
 # Agent Strata
 
-面向 Codex 和 Claude Code 的原生子 Agent 编排 skill。目标是降低合格开发成果的总成本和耗时：按任务选择模型与推理强度，隔离噪声上下文，保留必要验证。
+Strata 为 Codex 和 Claude Code 编排原生子代理。先满足代码质量和工程验收要求，再比较能通过验收的方案，尽量缩短交付时间，节省 token 和代理额度。
 
-Codex 主控始终跟随用户在 CLI/App 中的当前模型和推理强度，后续切换也优先。GPT-6.1 Sol `xhigh` 是个人使用建议，安装器不会写入或恢复主控配置。Strata 不设子 Agent 数量上限；主控按真实宿主槽位、独立任务、资源、成本和整合能力决定并发，默认一个写入者。
+## Codex 怎么选模型
 
-## 当前 GPT 分工
-
-路由更新于 2026-11-12。按同类任务的验收结果、重试、耗时和总费用调整。
-
-| 模型 | 建议任务 | 子任务推理强度 |
+| 任务 | 首选模型与强度 | 角色 |
 |---|---|---|
-| GPT-6.1 Terra `gpt-6.1-terra` | 普通功能、修复、重构、测试，以及有明确验收的写作和视觉任务 | `worker` 默认 `medium`，较难的有界任务用 `high` |
-| GPT-6 Luna `gpt-6-luna` | 独立代码定位、日志取证、摘要和机械操作 | `scout`、`executor` 默认 `medium`，简单任务用 `low` |
-| GPT-6.1 Sol `gpt-6.1-sol` | 跨模块根因、复杂实现和关键审查 | `deep_worker`、`reviewer` 用 `high/xhigh` |
-| GPT-6 Astra `gpt-6-astra` | 跨代码、浏览器与专业软件的高难度长流程评估 | 显式选择，不自动回退 |
+| 已知路径的短操作、小型顺序改动 | 主控直接完成 | — |
+| 定位调用方或测试、提取日志证据、执行明确命令 | GPT-6 Luna `low/medium` | `scout` / `executor` |
+| 契约已知的功能、修复、重构、测试 | GPT-6.1 Terra `medium`。步骤较多但边界明确时用 `high` | `worker` |
+| 复杂实现、跨模块根因分析 | GPT-6.1 Sol `high`，首轮直接用 | `deep_worker` |
+| 不变量不明、证据冲突、回滚代价高或需要关键独立审查 | GPT-6.1 Sol `xhigh` | `deep_worker` / `reviewer` |
 
-[官方 Standard 短上下文 API 定价](https://developers.openai.com/api/docs/pricing)，单位为美元 / 百万 token：
+主控始终跟随你在 CLI 或 App 中当前选定的模型和推理强度。Claude Code 使用独立的原生角色配置。 [Claude Code 配置](skills/strata/references/claude.md)
 
-| 模型 | 输入 | 缓存读取 | 输出 |
-|---|---:|---:|---:|
-| Sol 6.1 | 2 | 0.10 | 10 |
-| Terra 6.1 | 1 | 0.05 | 5 |
-| Luna 6 | 0.10 | 0.01 | 0.50 |
-| Astra 6 | 10 | 1 | 50 |
+## 成本、耗时和输出 token
 
-Artificial Analysis 的同档评测中，Terra medium 平均每任务花费 $0.17，耗时 2.7 分钟。Sol medium 为 $0.36 和 4.2 分钟。Strata 据此把 Terra medium 作为普通编码的起点，以实际测试和返工决定是否升级。 [Artificial Analysis 同档对照](https://artificialanalysis.ai/models/comparisons/gpt-6-1-terra-medium-vs-gpt-6-1-sol-medium)
+以下是 2026-11-13 核对的 Artificial Analysis Intelligence Index v5.0.1 数据。三项用量均按基准单任务统计，输出包含推理和回答。 [完整数据与来源](skills/strata/references/cost-control.md)
 
-完整的输入 / 输出价格、任务耗时、成本、智能、速度、延迟和上下文窗口见 [成本与质量依据](skills/strata/references/cost-control.md)。API 最大窗口不等于 Codex 当前可用窗口；订阅额度、API 美元和第三方网关费用分别核算。
+| 模型与强度 | Intelligence Index | 成本（美元） | 耗时（分钟） | 输出 token |
+|---|---:|---:|---:|---:|
+| Luna low | 10 | 0.01 | 0.6 | 3.3k |
+| Luna medium | 18 | 0.04 | 3.5 | 19.8k |
+| Terra medium | 38 | 0.17 | 2.8 | 10.9k |
+| Sol medium | 46 | 0.36 | 4.3 | 13.5k |
+| Sol high | 50 | 0.59 | 7.4 | 22.6k |
+| Sol xhigh | 52 | 0.76 | 9.9 | 30.2k |
 
-## 编排与上下文
+Luna low 适合可直接核对的取证。需要合并多处证据时可以选 Luna medium，但它在基准上比 Terra medium 输出更多、耗时更长。普通实现从 Terra medium 起步。复杂实现从 Sol high 起步，风险和不确定性足够高时直接选 xhigh。按同类项目任务的首次验收、重试、实际耗时和用量校准。基准美元成本与客户端额度分别统计。
 
-多步任务优先找一项可独立验收的工作交给子 Agent，例如实现一个范围明确的修复，或在主控实现期间定位现有测试。小型顺序工作直接用工具。任务包写明文件、契约、可写路径、验收和停止条件。子 Agent 返回结论、位置、测试和不确定性。
+## 怎么并行
 
-```mermaid
-flowchart LR
-    U[用户当前模型与 effort] --> C[主控]
-    C --> D{值得委派?}
-    D -->|小型顺序工作| T[直接工具]
-    D -->|独立任务| P[紧凑任务包]
-    P --> A[Luna / Terra / Sol]
-    A --> V[主控审查与验证]
-    T --> V
-```
+先明确验收命令和写入范围。以普通修复为例，可以让 Luna 查找既有用例，同时让 Terra 修改已确定的实现。若必须先确认根因，先完成诊断，再派发实现。提交前由主控整合并执行所需检查。
 
-不复制整段聊天给每个子 Agent，不重复搜索同一个问题；复用证据，按需读引用。默认一个写入者，多写入者必须路径互不重叠、共享契约固定、每个域可独立验证。超过宿主容量的任务排队。子 Agent 不派生、不自行提交 / 推送 / 部署，也不跨厂商调用。[详细编排规则](docs/orchestration.md)。
+并行耗时按最长依赖路径估算，加上交接、整合和验证。用量合计主控、子代理与重试。默认一个写入者，多写入者须拥有互不重叠的路径、固定的共享契约和独立验证。任务包只带相关证据和文件位置。 [详细编排规则](docs/orchestration.md)
 
-## 安装并跟踪 main
+## 安装与更新
 
-推荐维护一个 `main` checkout，把已发现的 skill 目录链接到其中的 `skills/strata`。先检查并备份已有安装，再建立链接：
-
-```bash
-git clone --branch main https://github.com/SanStone3/agent-strata.git /path/to/agent-strata
-ln -s /path/to/agent-strata/skills/strata /path/to/discovered-skills/strata
-```
-
-同机项目共用技能源，各 CLI/App/SSH 登录仍保留自己的 CODEX_HOME、Agent 定义和绑定。链接跟随本地 checkout；远端更新需要在维护时 `fetch` 后 `merge --ff-only origin/main`，不自动重置有改动的目录，也不安装后台更新器。
-
-快照安装可用：
+快照安装适合单个客户端：
 
 ```bash
 npx -y skills@1.5.23 add SanStone3/agent-strata -g -a codex -s strata -y
 ```
 
-安装 skill 后，由 AI 检查实际客户端，备份并增量合并角色定义与规则；保持主控、认证、provider、权限和其他设置。原生工具支持覆盖模型时直接按任务选择；仅支持命名角色的客户端需要生成绑定并验证重载。参见 [安装与作用域](docs/installation.md)。Claude 保留自己的原生模型策略，不随本次 Codex 优化改动。
+多个 CLI、App 或项目可以共用一个本地 `main` checkout，并将各技能目录链接到 `skills/strata`。更新时先检查本地改动，再快进 checkout。各登录入口保留自己的 `CODEX_HOME`、代理定义和模型绑定。 [共享安装和更新步骤](docs/installation.md)
+
+安装后可对 Codex 说「用 `$strata` 编排这个任务」。如果要同时启用命名角色，先按目标客户端解析并生成暂存配置，再增量合并。技能安装只负责发现技能，命名角色需要单独配置。 [命名角色配置与验证](skills/strata/references/install.md)
 
 ## 解析与验证
 
 ```bash
-# 使用当前工具目录，或 --discover 发现匹配客户端的目录。
-python3 skills/strata/scripts/resolve_models.py --catalog /path/to/models.json
-python3 skills/strata/scripts/resolve_models.py --catalog /path/to/models.json \
-  --effort worker=high --role worker
-python3 skills/strata/scripts/resolve_models.py --catalog /path/to/models.json \
-  --output-dir /path/to/new-staging-dir
+# 读取当前客户端的模型清单，解析子代理绑定。
+python3 skills/strata/scripts/resolve_models.py --discover
 
+# 已有同客户端目录时，为高风险实现指定 Sol xhigh。
+python3 skills/strata/scripts/resolve_models.py --catalog /path/to/models.json \
+  --role deep_worker --effort deep_worker=xhigh
+
+# 在仓库干净副本中校验发布内容与路由。
+python3 -m pip install -r requirements-dev.txt
 python3 skills/strata/scripts/validate.py --repo .
-python3 -m unittest discover -s tests -v
+python3 -m unittest discover -s tests
 ```
 
-解析器默认生成子 Agent 配置。普通 `worker` 优先 Terra medium，Sol 作为符合条件的同档回退。`--pin ROLE=MODEL` 指定模型，`--effort ROLE=LEVEL` 指定角色与模型都支持的强度。旧的 `--task-kind coding` 和 `--task-kind scoped` 参数共用同一套普通 `worker` 策略。
-
-结构校验与目录发现不证明实际推理权限或任务质量。必要时通过已授权的原生任务核验，不因安装额外运行付费基准。详见 [模型路由](skills/strata/references/model-routing.md)、[验证等级](skills/strata/references/validation.md) 和 [独立登录 / SSH](skills/strata/references/auth-context.md)。
-
-## 仓库内容
-
-`skills/strata/SKILL.md` 为短入口；`references/` 按需加载；`assets/` 保存模型策略和 Codex / Claude 模板；`scripts/` 负责只读发现、解析、暂存生成与校验；`tests/` 覆盖路由和配置回归。模型数据是注明日期的参考，实际验收反馈优先；不承诺固定节省百分比。
+解析器验证模型与强度是否受当前清单支持。用 `--output-dir` 生成命名角色配置，配置合并后读回实际绑定。实际推理能力通过获准的原生任务验证。 [解析参数](skills/strata/references/model-routing.md) · [验证等级](skills/strata/references/validation.md)
 
 [MIT License](LICENSE)

@@ -2,27 +2,27 @@
 name: strata
 description: Delegate independent coding, research and review to native Codex or Claude Code subagents. In Codex, route focused evidence to Luna, ordinary coding to Terra and complex tasks to Sol; do not use for trivial sequential work.
 metadata:
-  version: "2026.11.12"
+  version: "2026.11.13"
 ---
 
 # Strata
 
-Optimize cost and elapsed time per accepted change, including context, retries and review. One controller owns integration and quality.
+Meet the code and engineering acceptance criteria first. Among routes that can meet them, balance delivery time, token use and agent allowance across the whole task, including retries and review. One controller owns integration and quality.
 
 ## Delegate and route by task
 
-When native delegation is allowed, delegate meaningful work with a self-contained brief and an independent check. At the start of multi-step work, look for a bounded implementation for Terra or a distinct evidence or verification task for Luna. One useful packet is enough. Run independent work alongside the controller's own work when possible. Keep one-off lookups and tiny sequential edits local.
+When native delegation is allowed, look for a self-contained implementation, evidence or verification packet that saves time on the critical path or adds needed independent evidence. Run it alongside the controller's work when useful. Batch related lookups and keep tiny sequential edits local.
 
 | Task | Codex starting point |
 |---|---|
 | Known path, short search, small sequential edit | Direct tools |
 | Bounded code or test discovery, log triage, extraction, summary or exact mechanical execution | Luna `low/medium` with `scout` (read-only) or `executor` |
 | Ordinary feature, bug fix, refactor or test change with understood contracts and clear checks | Terra `medium` with `worker` |
-| Harder bounded work, supplied-material writing, vision or computer use | Terra `medium/high` with `worker` |
-| Cross-module diagnosis, architecture, security, concurrency or difficult implementation | Sol `high/xhigh`; `deep_worker` |
-| Consequential independent review | Sol `high/xhigh`; `reviewer`, read-only |
+| More involved work with stable contracts and clear checks, including writing, vision or computer use | Terra `medium/high` with `worker` |
+| Difficult implementation or cross-module diagnosis | Sol `high` with `deep_worker` from the first pass |
+| Ambiguous invariants, high-impact failure, conflicting evidence or consequential independent review | Sol `xhigh` with `deep_worker` or read-only `reviewer` |
 
-Escalate to Sol when the packet requires cross-module root cause analysis, changes a high-risk contract, or fails an acceptance check that exposes deeper uncertainty. Inspect the partial result first and pass only the remaining problem. Keep required tests and evidence. See [cost-control.md](references/cost-control.md) for dated comparisons and [claude.md](references/claude.md) for Claude's independent routing.
+Choose the capability floor from contract uncertainty, failure impact and strength of the checks. Use Sol for work that needs it from the start. For eligible options compare Intelligence Index against **cost, time and output tokens per task**, then account for local evidence, context and integration overhead. When a check exposes deeper uncertainty, inspect the partial result and hand off the remaining problem to Sol. Keep the required tests and review. See [cost-control.md](references/cost-control.md) for the benchmark and [claude.md](references/claude.md) for Claude's independent routing.
 
 ## Orchestrate
 

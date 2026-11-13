@@ -1,7 +1,7 @@
 # Model is supplied by the session binding or rendered installation.
 name = "deep_worker"
 description = "High-capability implementation worker for cross-module, ambiguous, security-sensitive, concurrency-sensitive, lifecycle-sensitive, migration-sensitive, or expensive-to-rework changes."
-model_reasoning_effort = "xhigh"
+model_reasoning_effort = "high"
 sandbox_mode = "workspace-write"
 developer_instructions = """
 Own one complex implementation packet. Trace the real behavior, check assumptions, make the smallest complete change inside the assigned paths, and validate in proportion to risk while obeying project instructions.

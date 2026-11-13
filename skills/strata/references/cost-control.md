@@ -15,24 +15,28 @@ Official Standard short-context API prices, USD per million tokens. Cached input
 
 Sources: [pricing](https://developers.openai.com/api/docs/pricing), [Sol](https://developers.openai.com/api/docs/models/gpt-6.1-sol), [Terra](https://developers.openai.com/api/docs/models/gpt-6.1-terra), [Luna](https://developers.openai.com/api/docs/models/gpt-6-luna). API maximum context is not the active Codex context. Preserve client context/compaction settings. At more than 272K input, these GPT-6 request input/cache rates double and output rates rise 1.5x; cache writes, speed tiers and provider rates need separate accounting.
 
-AA Intelligence Index **v5.0.1**, checked 2026-11-06. Values below come from the linked effort-specific pages, not older Sol or index versions.
+## Artificial Analysis snapshot, 2026-11-13
 
-| Model / effort | Index | USD/task | Minutes/task | Output tok/s | First answer token, seconds |
-|---|---:|---:|---:|---:|---:|
-| [Sol medium](https://artificialanalysis.ai/zh/models/gpt-6-1-sol-medium) | 46 | 0.36 | 4.2 | 54 | 6.80 |
-| [Sol high](https://artificialanalysis.ai/zh/models/gpt-6-1-sol-high) | 50 | 0.59 | 7.1 | 53 | 46.36 |
-| [Sol xhigh](https://artificialanalysis.ai/zh/models/gpt-6-1-sol-xhigh) | 52 | 0.76 | 9.8 | 52 | 79.16 |
-| [Terra medium](https://artificialanalysis.ai/zh/models/gpt-6-1-terra-medium) | 38 | 0.17 | 2.6 | 70 | 5.04 |
-| [Terra high](https://artificialanalysis.ai/zh/models/gpt-6-1-terra-high) | 42 | 0.26 | 4.0 | 70 | 12.63 |
-| [Terra xhigh](https://artificialanalysis.ai/zh/models/gpt-6-1-terra-xhigh) | 45 | 0.40 | 6.1 | 71 | 38.22 |
-| [Luna medium](https://artificialanalysis.ai/zh/models/gpt-6-luna-medium) | 18 | 0.04 | Unavailable | Unavailable | Unavailable |
-| [Luna low](https://artificialanalysis.ai/zh/models/gpt-6-luna-low) | 10 | 0.01 | 0.6 | 90 | 2.72 |
+Intelligence Index v5.0.1 and its weighted per-task metrics. Output includes both reasoning and answer tokens. Time estimates use output tokens and measured generation speed. Provider speed measurements can change. Use the Index and relevant coding subtests as directional evidence. Repository acceptance, delivery time and actual plan usage come from comparable local tasks. [OpenAI model charts and methodology](https://artificialanalysis.ai/zh/models/creators/openai).
 
-AA costs/times are benchmark task averages, not repository completion predictions. First-answer latency includes reasoning; do not call it pure TTFT. Performance measurements are rolling snapshots; unavailable data stays unavailable. The AA pages round context to 1M. Do not mix snapshots, effort levels or index versions to imply measured coding success.
+| Model / effort | Index | USD/task | Minutes/task | Output tokens/task |
+|---|---:|---:|---:|---:|
+| [Luna low](https://artificialanalysis.ai/models/comparisons/claude-haiku-5-5-low-vs-gpt-6-luna-low) | 10 | 0.01 | 0.6 | 3.3k |
+| [Luna medium](https://artificialanalysis.ai/models/comparisons/claude-haiku-5-5-medium-vs-gpt-6-luna-medium) | 18 | 0.04 | 3.5 | 19.8k |
+| [Terra medium](https://artificialanalysis.ai/models/comparisons/gpt-6-1-terra-medium-vs-gpt-6-1-sol-medium) | 38 | 0.17 | 2.8 | 10.9k |
+| [Terra high](https://artificialanalysis.ai/models/comparisons/gpt-6-1-terra-high-vs-gpt-6-1-sol-high) | 42 | 0.26 | 4.2 | 16.7k |
+| [Sol medium](https://artificialanalysis.ai/models/comparisons/gpt-6-1-terra-medium-vs-gpt-6-1-sol-medium) | 46 | 0.36 | 4.3 | 13.5k |
+| [Terra xhigh](https://artificialanalysis.ai/models/comparisons/gpt-6-1-terra-xhigh-vs-gpt-6-1-sol-medium) | 45 | 0.40 | 6.4 | 26.2k |
+| [Sol high](https://artificialanalysis.ai/models/comparisons/gpt-6-1-sol-high-vs-gpt-6-1-sol-xhigh) | 50 | 0.59 | 7.4 | 22.6k |
+| [Sol xhigh](https://artificialanalysis.ai/models/comparisons/gpt-6-1-sol-high-vs-gpt-6-1-sol-xhigh) | 52 | 0.76 | 9.9 | 30.2k |
 
-On 2026-11-12, the same-effort comparison put Terra medium at $0.17 and 2.7 minutes per task and Sol medium at $0.36 and 4.2 minutes. Use Terra medium as the starting point for ordinary coding with clear acceptance checks. The earlier snapshot shows why automatically raising Terra to xhigh can erase the savings. Use Luna low/medium for well-defined evidence and execution packets. Check acceptance, retries and total cost on comparable project tasks. [Artificial Analysis medium comparison](https://artificialanalysis.ai/models/comparisons/gpt-6-1-terra-medium-vs-gpt-6-1-sol-medium).
+## Apply all three comparisons
 
-User-provided background: [KnightLi comparison](https://knightli.com/2026/09/10/openai-gpt-6-astra-gpt-5-6-model-comparison/), [LaoZhang comparison](https://blog.laozhang.ai/zh/posts/gpt-6-sol-vs-terra-vs-luna-vs-astra). Their historical measurements are not merged with this snapshot.
+1. Set the capability floor from failure impact, uncertain contracts and available checks. Choose Sol high upfront for difficult engineering and Sol xhigh upfront when evidence conflicts, invariants are unclear or rollback is costly. Preserve required validation and independent review.
+2. Compare cost, time and output tokens among routes that can meet that floor. Luna low fits exact extraction or commands. Luna medium fits synthesis within a bounded scout packet and can use more tokens and time than Terra medium even at lower dollar cost. Terra medium fits ordinary code with clear checks. Terra high fits longer bounded work. Sol medium is a same-effort worker fallback and scores higher than Terra xhigh with lower measured cost, time and output tokens.
+3. Compare the complete routes. For parallel work, estimate the longest dependency path plus handoff, integration and verification time. Sum input and output across the controller, children and retries. If a lower tier is likely to need a second pass, include that pass before choosing it. Delegate an independent task when overlap reduces the delivery time or when independent evidence adds required assurance.
+
+For calibration, use comparable completed tasks and record first-pass acceptance, required checks, elapsed time, available input/output usage, agent usage and retries. Treat missing usage as unknown. Avoid mixing API dollars, plan allowance and gateway charges.
 
 ## Practical savings
 

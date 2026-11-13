@@ -22,7 +22,7 @@ SPEC.loader.exec_module(R)
 
 
 def model(name, **kw):
-    return {"model": name, "supportedReasoningEfforts": [{"reasoningEffort": x} for x in ("medium", "xhigh")], **kw}
+    return {"model": name, "supportedReasoningEfforts": [{"reasoningEffort": x} for x in ("medium", "high", "xhigh")], **kw}
 
 
 def catalog(*extra):
@@ -55,6 +55,8 @@ class RoutingTests(unittest.TestCase):
         self.assertFalse(doc["access_verified"])
         self.assertNotIn("controller", doc["bindings"])
         self.assertEqual("medium", doc["bindings"]["worker"]["reasoning_effort"])
+        self.assertEqual("high", doc["bindings"]["deep_worker"]["reasoning_effort"])
+        self.assertEqual("xhigh", doc["bindings"]["reviewer"]["reasoning_effort"])
         self.assertEqual("read-only", doc["bindings"]["reviewer"]["sandbox_mode"])
 
     def test_removed_family_pins_and_custom_policy_are_rejected(self):

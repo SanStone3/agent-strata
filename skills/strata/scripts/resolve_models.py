@@ -24,7 +24,7 @@ ROLES = {
     "scout": ("efficient", "medium", "read-only"),
     "executor": ("efficient", "medium", "workspace-write"),
     "worker": ("bounded", "medium", "workspace-write"),
-    "deep_worker": ("balanced", "xhigh", "workspace-write"),
+    "deep_worker": ("balanced", "high", "workspace-write"),
     "reviewer": ("balanced", "xhigh", "read-only"),
 }
 # Defaults are task starting points; capability and write boundaries stay fixed.

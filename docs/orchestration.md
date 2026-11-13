@@ -9,11 +9,11 @@
 | 已知路径的小改动、顺序操作 | 主控直接工具 | 无需为单次读取创建 Agent |
 | 代码定位、日志取证、提取、摘要、机械执行 | Luna low / medium | 需要判断实现契约或追查跨模块根因 |
 | 普通功能、修复、重构、测试 | Terra medium `worker` | 契约不明，或涉及安全、并发、迁移 |
-| 较难的有界实现、基于材料写作、视觉、计算机操作 | Terra medium / high `worker` | 验收失败且暴露更深的问题 |
-| 复杂实现、架构、根因、安全和并发 | Sol high / xhigh deep_worker | 发现写域 / 授权外需求 |
-| 关键独立审查 | Sol high / xhigh reviewer，只读 | 报告有证据的缺陷，由主控处理 |
+| 步骤较多但契约稳定的实现、写作、视觉和计算机操作 | Terra medium / high `worker` | 验收失败且暴露更深的问题 |
+| 复杂实现、跨模块根因 | Sol high `deep_worker` | 不变量不明、证据冲突或回滚代价高时用 xhigh |
+| 关键独立审查 | Sol xhigh `reviewer`，只读 | 报告有证据的缺陷，由主控处理 |
 
-多步任务优先委派一项可独立验收的实现或取证工作。遇到升级条件，主控先检查已完成的部分，再把剩余问题交给 Sol。 [基准与成本依据](../skills/strata/references/cost-control.md)
+先按风险和验收难度确定模型能力要求。已知难题首轮交给 Sol。对满足要求的候选同时比较指数、单任务成本、耗时和输出 token。发现新问题时，先检查已完成的部分，再把剩余问题交给合适的模型。 [基准与成本依据](../skills/strata/references/cost-control.md)
 
 ## 并发与上下文
 
