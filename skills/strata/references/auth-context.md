@@ -45,7 +45,7 @@ The child process inherits the calling environment, with only a requested `CODEX
 - Preserve existing environment-variable names and values for custom providers. Never read or print secrets to build model candidates, and never add a key to prompts, bindings, logs, repository files or generated Agent definitions.
 - Do not copy `auth.json`, log out the account, add an API key, change `forced_login_method`, change endpoints, or bypass host permission controls merely to make discovery succeed.
 
-The script itself reads metadata through the client, not credential files. It records a non-secret `context` and `context_sha256` alongside the catalog. Context includes executable, client version, home, host, cwd, profile, provider, auth mode and its evidence source; a provider endpoint may be represented only by a hash. Keep these machine-local artifacts outside the public repository. This fingerprint identifies a configuration context, not the API-key principal or authorization state. After credential rotation or account changes, discard old bindings and recheck access even if the fingerprint is unchanged.
+The script reads metadata through the client and keeps credential files untouched. Context includes the executable, version, home, host, working directory, profile, provider and auth mode. It hashes the endpoint and, when ChatGPT discovery supplies an account email, derives a host-and-home-scoped comparison marker without saving the email. The marker can detect a switch between accounts with different reported addresses. API-key principals, same-address workspace switches and clients without an account marker still require fresh discovery and access verification after a login change. Keep bindings and markers private.
 
 ## Keep discovery separate from access and execution
 
@@ -75,9 +75,9 @@ python3 scripts/validate.py --codex-home "$HOME/.codex-ide" \
   --bindings /path/to/new-ide-staging/model-bindings.json
 ```
 
-For a profile add `--codex-profile NAME`. For project-level rules add `--codex-rules /path/to/project/AGENTS.md`. Pass `--runtime-context /path/to/fresh-discovery.json` (or a JSON context object) to compare the complete freshly observed context, not only the target home's configured provider/profile. Manual catalogs without provenance remain usable but cannot prove execution-context identity.
+For a profile add `--codex-profile NAME`. For project-level rules add `--codex-rules /path/to/project/AGENTS.md`. For runtime validation, save a fresh `resolve_models.py --discover` result from the same client and pass it as `--runtime-context /path/to/fresh-discovery.json`. The validator requires a capture time within 24 hours and checks both the context and normalized model catalog. Regenerate old bindings after upgrading if the newly discovered context includes an account marker.
 
-The validator refuses a binding from a different home/provider/profile, detects primary and role drift, and rejects role-specific provider overrides. Without `--runtime-context`, it explicitly warns that current auth/endpoint/executable identity remains unverified even when the saved binding carries provenance. Full context comparison requires a newly observed context from the target, not another copy of the saved binding. It does not prove live entitlement, effective session overrides or native spawn behavior. A currently running chat may retain its prior settings; report when a new session or extension reload is needed.
+The validator checks home, provider, profile and installed roles, and rejects role-specific provider overrides. Without a new runtime snapshot, validation covers the stored catalog and configuration. Runtime validation compares the client metadata and catalog observed at capture time. Verify live entitlement, session overrides and native execution through the target client. A running chat may retain its prior settings until the client reloads them.
 
 ## Failure classification and autonomous behavior
 

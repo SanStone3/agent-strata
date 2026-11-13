@@ -539,15 +539,12 @@ class Validator:
             policy = ROUTING.read_json(self.model_policy)
             ROUTING.validate_policy(policy)
             if self.bindings_path:
-                expected_context = None
+                result = ROUTING.verify_binding(ROUTING.read_json(self.bindings_path), policy)
                 if self.runtime_context:
-                    expected_context = ROUTING.read_json(self.runtime_context)
-                    if isinstance(expected_context, dict) and "context" in expected_context:
-                        expected_context = expected_context["context"]
-                    if not isinstance(expected_context, dict):
-                        raise ROUTING.RoutingError("Runtime context must contain a context object")
-                result = ROUTING.verify_binding(ROUTING.read_json(self.bindings_path), policy, expected_context=expected_context)
+                    ROUTING.verify_runtime(result, ROUTING.read_json(self.runtime_context))
                 self.binding_context = result.get("context")
+                if self.runtime_context and "account_fingerprint" not in self.binding_context:
+                    self.warnings.append("Runtime account principal is unverified; this client exposes no comparable account marker")
                 if self.binding_context and self.codex_home:
                     if Path(self.binding_context.get("codex_home", "")).resolve() != self.codex_home:
                         raise ROUTING.RoutingError("Model binding belongs to a different CODEX_HOME")
@@ -761,7 +758,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--bindings", type=Path, help="fresh model-bindings.json from resolve_models.py")
     parser.add_argument("--model-policy", type=Path, help="policy used to resolve the supplied binding")
     parser.add_argument("--codex-profile", help="named profile in the selected Codex home")
-    parser.add_argument("--runtime-context", type=Path, help="fresh discovery catalog/context to compare with the binding")
+    parser.add_argument("--runtime-context", type=Path, help="fresh discovery catalog or --discover output to compare with the binding")
     parser.add_argument("--codex-rules", type=Path, help="project-root AGENTS.md when Codex home is project/.codex")
     return parser.parse_args()
 

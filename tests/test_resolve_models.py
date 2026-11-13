@@ -353,7 +353,7 @@ class RoutingTests(unittest.TestCase):
 
     def test_context_roundtrip_and_drift_detection(self):
         payload = catalog()
-        payload["context"] = discovery_context(endpoint_fingerprint="a" * 64)
+        payload["context"] = discovery_context(endpoint_fingerprint="a" * 64, account_fingerprint="c" * 64)
         doc = self.resolve(payload)
         saved = json.loads(json.dumps(doc))
         self.assertEqual(payload["context"], R.verify_binding(saved, self.policy, payload["context"])["context"])
@@ -362,8 +362,7 @@ class RoutingTests(unittest.TestCase):
         for key, value in (("host", "different-host"), ("codex_home", "/tmp/other-home"),
                            ("cwd", "/tmp/other-work"), ("profile", "api"), ("provider", "evolab"),
                            ("executable", "/tmp/other-codex"), ("client_version", "0.162.0-alpha.1"),
-                           ("auth_mode", "api-key"), ("auth_source", "login-status"),
-                           ("endpoint_fingerprint", "b" * 64)):
+                           ("endpoint_fingerprint", "b" * 64), ("account_fingerprint", "d" * 64)):
             changed = copy.deepcopy(doc)
             changed["context"][key] = value
             with self.subTest(key=key):
@@ -387,7 +386,9 @@ class RoutingTests(unittest.TestCase):
 
     def test_context_rejects_raw_account_or_config_fields(self):
         for extra in ({"email": "private@example.invalid"}, {"headers": {"Authorization": "secret"}},
-                      {"endpoint_fingerprint": "https://secret.invalid"}, {"auth_mode": "other"}):
+                      {"endpoint_fingerprint": "https://secret.invalid"}, {"auth_mode": "other"},
+                      {"account_fingerprint": "user@example.invalid"},
+                      {"account_fingerprint": "a" * 64, "auth_mode": "api-key"}):
             with self.subTest(extra=extra), self.assertRaises(R.RoutingError):
                 self.resolve({**catalog(), "context": discovery_context(**extra)})
 
@@ -493,7 +494,8 @@ for line in sys.stdin:
   if mode in ('fallback_chatgpt','fallback_api','unknown_auth','status_timeout'):
    print(json.dumps({'id':msg['id'],'error':{'message':'secret-account-error'}}),flush=True); continue
   result={'account':{'type':'apiKey' if mode=='api' else 'chatgpt',
-                     'email':'private-email@example.invalid','id':'private-account-id','apiKey':'secret-account-key'}}
+                     'email':{'other_account':'other-email@example.invalid','no_email':None}.get(mode,'private-email@example.invalid'),
+                     'id':'private-account-id','apiKey':'secret-account-key'}}
  else:
   page+=1
   if mode=='rpc_error':
@@ -596,12 +598,22 @@ class DiscoveryTests(unittest.TestCase):
         payload = self.discover("api", expected_auth="api-key", expected_provider="evolab")
         context = payload["context"]
         self.assertEqual("api-key", context["auth_mode"])
+        self.assertNotIn("account_fingerprint", context)
         endpoint = "https://secret-user:secret-password@example.invalid/v1?token=secret-endpoint"
         self.assertEqual(R.hashlib.sha256(endpoint.encode()).hexdigest(), context["endpoint_fingerprint"])
         policy = R.read_json(SKILL / "assets/model-policy.json")
         serialized = json.dumps(R.resolve(payload, policy))
         for secret in ("secret-", "private-", "example.invalid", "Authorization", "apiKey"):
             self.assertNotIn(secret, serialized)
+
+    def test_chatgpt_account_change_updates_only_the_scoped_marker(self):
+        first = self.discover()["context"]
+        self.assertEqual(first, self.discover()["context"])
+        switched = self.discover("other_account")["context"]
+        self.assertNotEqual(first.pop("account_fingerprint"), switched.pop("account_fingerprint"))
+        self.assertEqual(first, switched)
+        self.assertNotIn("account_fingerprint", self.discover("no_email")["context"])
+        self.assertNotIn("example.invalid", json.dumps(self.discover()))
 
     def test_login_status_fallback_uses_same_target_and_never_verifies_access(self):
         for mode, expected in (("fallback_chatgpt", "chatgpt"), ("fallback_api", "api-key")):

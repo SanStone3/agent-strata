@@ -2,7 +2,7 @@
 name: strata
 description: Delegate independent coding, research and review to native Codex or Claude Code subagents. In Codex, route focused evidence to Luna, ordinary coding to Terra and complex tasks to Sol; do not use for trivial sequential work.
 metadata:
-  version: "2026.11.13"
+  version: "2026.11.13.1"
 ---
 
 # Strata

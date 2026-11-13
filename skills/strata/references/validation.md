@@ -17,7 +17,7 @@ python3 skills/strata/scripts/validate.py --repo . --claude-home /path/to/claude
 
 Codex checks five roles, models, selected efforts, boundaries and rules. Templates omit primary keys and numeric concurrency caps; installed configs may have explicit positive user caps or omit them. Current user primary selection is never compared with an old controller recommendation. Bindings are recomputed from their catalog/policy/context; no manifest means model availability/tier compatibility remains unverified.
 
-Use each login's actual CODEX_HOME. `--runtime-context` compares fresh host/auth/provider/executable identity; `--codex-profile NAME` selects its `<home>/<name>.config.toml`; `--model-policy` selects an approved custom policy; `--codex-rules` supports project rules above `.codex`. Never reuse another login's binding or publish catalogs containing private context.
+Use each login's actual CODEX_HOME. Pass a fresh catalog from the matching client or a fresh `resolve_models.py --discover` result to `--runtime-context`. The validator checks the capture time, client context and normalized model catalog against the installed binding. A bare context has no timestamp or model evidence. `--codex-profile NAME` selects the profile, `--model-policy` selects an approved policy, and `--codex-rules` supports rules above `.codex`. Keep catalogs and account markers private and local to the client.
 
 Claude validation retains its independent alias/effort/tool/spawn-depth contracts. It does not prove the provider's alias resolves to a compatible model.
 

@@ -355,15 +355,36 @@ status_line = ["model-name"]
         with contextlib.redirect_stdout(io.StringIO()):
             self.assertEqual(0, validator.run(), validator.errors)
 
-    def test_live_context_detects_auth_surface_change(self):
+    def test_runtime_snapshot_detects_staleness_catalog_and_identity_drift(self):
         context = self.bind_context()
-        context["auth_mode"] = "api-key"
         runtime = Path(self.temporary.name) / "live-context.json"
-        runtime.write_text(json.dumps(context))
-        validator = VALIDATE.Validator(None, self.skill, self.codex_home, bindings=self.bindings_path, runtime_context=runtime)
-        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
-            self.assertEqual(1, validator.run())
-        self.assertTrue(any("context" in error.lower() for error in validator.errors))
+        captured = VALIDATE.ROUTING.utc_now()
+        snapshot = {"context": context, "models": self.binding["catalog"], "captured_at": captured}
+        resolved_snapshot = {**self.binding, "catalog_captured_at": captured}
+        for payload, error in (
+            (snapshot, None),
+            (resolved_snapshot, None),
+            (context, "dated discovery catalog"),
+            ({**snapshot, "captured_at": None}, "timestamp"),
+            ({**snapshot, "captured_at": "2000-01-01T00:00:00Z"}, "stale"),
+            ({**resolved_snapshot, "catalog_captured_at": "2000-01-01T00:00:00Z"}, "stale"),
+            ({**snapshot, "captured_at": "2100-01-01T00:00:00Z"}, "future"),
+            ({**snapshot, "models": snapshot["models"][:-1]}, "catalog differs"),
+            ({**snapshot, "context": {**context, "auth_mode": "api-key"}}, "expected runtime context"),
+            ({**snapshot, "context": {**context, "account_fingerprint": "a" * 64}}, "expected runtime context"),
+        ):
+            with self.subTest(error=error):
+                runtime.write_text(json.dumps(payload))
+                validator = VALIDATE.Validator(None, self.skill, self.codex_home,
+                                               bindings=self.bindings_path, runtime_context=runtime)
+                with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                    code = validator.run()
+                if error:
+                    self.assertEqual(1, code)
+                    self.assertTrue(any(error in message for message in validator.errors), validator.errors)
+                else:
+                    self.assertEqual(0, code, validator.errors)
+                    self.assertTrue(any("principal is unverified" in warning for warning in validator.warnings))
 
     def test_installed_models_cannot_be_omitted(self) -> None:
         p = self.codex_home / "agents/worker.toml"

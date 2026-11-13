@@ -63,7 +63,7 @@ def normalize_context(context):
         return None
     required = {"schema_version", "host", "executable", "client_version", "codex_home",
                 "cwd", "profile", "provider", "auth_mode", "auth_source"}
-    if (not isinstance(context, dict) or set(context) - required - {"endpoint_fingerprint"}
+    if (not isinstance(context, dict) or set(context) - required - {"endpoint_fingerprint", "account_fingerprint"}
             or not required.issubset(context) or type(context["schema_version"]) is not int
             or context["schema_version"] != 1):
         raise RoutingError("Invalid discovery context schema")
@@ -84,10 +84,11 @@ def normalize_context(context):
         raise RoutingError("Invalid discovery context auth mode")
     if context["auth_source"] not in ("account/read", "login-status", "unknown"):
         raise RoutingError("Invalid discovery context auth source")
-    fingerprint = context.get("endpoint_fingerprint")
-    if "endpoint_fingerprint" in context and (not isinstance(fingerprint, str)
-                                             or not re.fullmatch(r"[0-9a-f]{64}", fingerprint)):
-        raise RoutingError("Invalid discovery endpoint fingerprint")
+    for key in ("endpoint_fingerprint", "account_fingerprint"):
+        if key in context and (not isinstance(context[key], str) or not re.fullmatch(r"[0-9a-f]{64}", context[key])):
+            raise RoutingError(f"Invalid discovery {key}")
+    if "account_fingerprint" in context and (context["auth_mode"], context["auth_source"]) != ("chatgpt", "account/read"):
+        raise RoutingError("Account fingerprint requires ChatGPT account discovery")
     return dict(context)
 
 
@@ -365,6 +366,23 @@ def verify_binding(document, policy, expected_context=None):
     return result
 
 
+def verify_runtime(binding, snapshot):
+    """Compare a verified binding with a dated catalog from the target client."""
+    if not isinstance(snapshot, dict) or snapshot.get("context") is None:
+        raise RoutingError("Runtime snapshot requires a dated discovery catalog with context")
+    if "catalog" in snapshot:
+        # The resolver's --discover output already contains a normalized catalog.
+        check_age(snapshot.get("catalog_captured_at"))
+        models = normalize_catalog({"models": snapshot["catalog"]})
+    else:
+        check_age(snapshot.get("captured_at"))
+        models = normalize_catalog(snapshot)
+    if binding["context"] != normalize_context(snapshot["context"]):
+        raise RoutingError("Binding discovery context differs from the expected runtime context")
+    if binding["catalog_sha256"] != digest(models):
+        raise RoutingError("Runtime model catalog differs from the binding; regenerate it from current discovery")
+
+
 def _stop_process(process, thread):
     if process.poll() is None:
         try:
@@ -591,6 +609,11 @@ def discover(codex="codex", timeout=20, codex_home=None, cwd=None, profile=None,
         context["auth_mode"] = _account_auth(account)
         if context["auth_mode"] != "unknown":
             context["auth_source"] = "account/read"
+        if context["auth_mode"] == "chatgpt":
+            email = account["account"].get("email")
+            if isinstance(email, str) and email.strip():
+                # Persist a scoped marker for comparison, never the address or credentials.
+                context["account_fingerprint"] = digest(["strata-chatgpt-account", context["host"], str(home), email.strip().casefold()])
     finally:
         stopped.set()
         _stop_process(process, thread)
