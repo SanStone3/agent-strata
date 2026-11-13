@@ -8,11 +8,13 @@ Strata 为 Codex 和 Claude Code 编排原生子代理。先满足代码质量�
 |---|---|---|
 | 已知路径的短操作、小型顺序改动 | 主控直接完成 | — |
 | 定位调用方或测试、提取日志证据、执行明确命令 | GPT-6 Luna `low/medium` | `scout` / `executor` |
-| 契约已知的功能、修复、重构、测试 | GPT-6.1 Terra `medium`。步骤较多但边界明确时用 `high` | `worker` |
+| 需要读代码、修改并跑测试的常规修复、功能和重构 | GPT-6.1 Sol `medium` | `worker` |
+| 改法已知、可快速验收的小改动 | GPT-6.1 Sol `low` 或显式选择 Terra `medium` | 按任务派发 |
+| 范围明确的写作、视觉和计算机操作 | GPT-6.1 Terra `medium/high` | 按任务派发 |
 | 复杂实现、跨模块根因分析 | GPT-6.1 Sol `high`，首轮直接用 | `deep_worker` |
 | 不变量不明、证据冲突、回滚代价高或需要关键独立审查 | GPT-6.1 Sol `xhigh` | `deep_worker` / `reviewer` |
 
-主控始终跟随你在 CLI 或 App 中当前选定的模型和推理强度。Claude Code 使用独立的原生角色配置。 [Claude Code 配置](skills/strata/references/claude.md)
+主控始终跟随你在 CLI 或 App 中当前选定的模型和推理强度。Astra 仅供你手动选择为主控。子代理按任务使用 Luna、Terra 或 Sol。Claude Code 使用独立的原生角色配置。 [Claude Code 配置](skills/strata/references/claude.md)
 
 ## 成本、耗时和输出 token
 
@@ -22,16 +24,17 @@ Strata 为 Codex 和 Claude Code 编排原生子代理。先满足代码质量�
 |---|---:|---:|---:|---:|
 | Luna low | 10 | 0.01 | 0.6 | 3.3k |
 | Luna medium | 18 | 0.04 | 3.5 | 19.8k |
-| Terra medium | 38 | 0.17 | 2.8 | 10.9k |
-| Sol medium | 46 | 0.36 | 4.3 | 13.5k |
-| Sol high | 50 | 0.59 | 7.4 | 22.6k |
-| Sol xhigh | 52 | 0.76 | 9.9 | 30.2k |
+| Sol low | 35 | 0.16 | 2.0 | 5.84k |
+| Terra medium | 38 | 0.17 | 2.9 | 10.9k |
+| Sol medium | 46 | 0.36 | 4.5 | 13.5k |
+| Sol high | 50 | 0.59 | 7.7 | 22.6k |
+| Sol xhigh | 52 | 0.76 | 10.5 | 30.2k |
 
-Luna low 适合可直接核对的取证。需要合并多处证据时可以选 Luna medium，但它在基准上比 Terra medium 输出更多、耗时更长。普通实现从 Terra medium 起步。复杂实现从 Sol high 起步，风险和不确定性足够高时直接选 xhigh。按同类项目任务的首次验收、重试、实际耗时和用量校准。基准美元成本与客户端额度分别统计。
+Sol medium 在 Terminal-Bench 4.0 上为 48.0%，Terra medium 为 32.3%。Terra medium 在 FrontierCode-AA 2.0 略高。结合实际修复耗时，普通修复默认用 Sol medium，按首次验收、重试和交付总耗时校准。基准美元成本与客户端额度分别统计。 [编码基准对照](https://artificialanalysis.ai/models/comparisons/gpt-6-1-terra-medium-vs-gpt-6-1-sol-medium)
 
 ## 怎么并行
 
-先明确验收命令和写入范围。以普通修复为例，可以让 Luna 查找既有用例，同时让 Terra 修改已确定的实现。若必须先确认根因，先完成诊断，再派发实现。提交前由主控整合并执行所需检查。
+先明确验收命令和写入范围。普通修复可让 Luna 查找既有用例，同时让 Sol medium 处理独立的实现工作。若实现依赖根因结论，先完成诊断。提交前由主控整合并执行所需检查。
 
 并行耗时按最长依赖路径估算，加上交接、整合和验证。用量合计主控、子代理与重试。默认一个写入者，多写入者须拥有互不重叠的路径、固定的共享契约和独立验证。任务包只带相关证据和文件位置。 [详细编排规则](docs/orchestration.md)
 

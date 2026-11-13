@@ -10,6 +10,8 @@
     "https://developers.openai.com/api/docs/guides/model-selection",
     "https://artificialanalysis.ai/zh/models/creators/openai",
     "https://artificialanalysis.ai/models/comparisons/gpt-6-1-terra-medium-vs-gpt-6-1-sol-medium",
+    "https://artificialanalysis.ai/models/comparisons/gpt-6-1-terra-high-vs-gpt-6-1-sol-medium",
+    "https://artificialanalysis.ai/models/comparisons/gpt-6-1-terra-medium-vs-gpt-6-1-sol-low",
     "https://artificialanalysis.ai/models/comparisons/gpt-6-1-sol-high-vs-gpt-6-1-sol-xhigh"
   ],
   "families": [
@@ -33,7 +35,7 @@
     "gpt-6.1-terra": {
       "tier": "bounded",
       "priority": 20,
-      "evidence": "https://artificialanalysis.ai/models/comparisons/gpt-6-1-terra-medium-vs-gpt-6-1-sol-medium (2026-11-12); use for bounded implementation with task-specific acceptance checks"
+      "evidence": "https://artificialanalysis.ai/models/comparisons/gpt-6-1-terra-medium-vs-gpt-6-1-sol-medium (2026-11-13); opt in for tightly scoped work with a known approach and quick acceptance checks"
     }
   },
   "pins": {},
@@ -77,7 +79,6 @@
       "gpt-6-luna"
     ],
     "worker": [
-      "gpt-6.1-terra",
       "gpt-6.1-sol"
     ],
     "deep_worker": [

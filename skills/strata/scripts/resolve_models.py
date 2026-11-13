@@ -30,7 +30,7 @@ ROLES = {
 # Defaults are task starting points; capability and write boundaries stay fixed.
 ROLE_EFFORTS = {
     "scout": ("low", "medium"), "executor": ("low", "medium"),
-    "worker": ("medium", "high", "xhigh"),
+    "worker": ("low", "medium", "high", "xhigh"),
     "deep_worker": ("high", "xhigh", "max"), "reviewer": ("high", "xhigh", "max"),
     "controller": ("none", "low", "medium", "high", "xhigh", "max"),
 }
@@ -47,6 +47,10 @@ class RoutingError(ValueError):
 def is_removed_model(name):
     """GPT-5.6 IDs, namespaced IDs and snapshots cannot be selected by Strata."""
     return isinstance(name, str) and re.search(r"(?:^|[/ :])gpt-5\.6(?:$|[-._:/])", name, re.IGNORECASE) is not None
+
+
+def is_primary_only_model(name):
+    return isinstance(name, str) and re.search(r"(?:^|[/ :])gpt-6(?:\.[0-9]+)?-astra(?:$|[-._:/])", name, re.IGNORECASE) is not None
 
 
 def utc_now():
@@ -176,6 +180,8 @@ def validate_policy(policy):
         raise RoutingError("automatic_models must be a nonempty unique list of reviewed model IDs")
     if any(is_removed_model(name) for name in automatic):
         raise RoutingError("GPT-5.6 has been removed from Strata")
+    if any(is_primary_only_model(name) for name in automatic):
+        raise RoutingError("Astra requires manual primary selection in the client")
     families = policy.get("families")
     if not isinstance(families, list):
         raise RoutingError("Policy families must be an array")
@@ -275,6 +281,8 @@ def resolve(payload, policy, *, pins=None, excluded=(), allowed=None, modalities
     selected_pins.update(pins or {})
     if any(is_removed_model(name) for name in selected_pins.values()):
         raise RoutingError("GPT-5.6 pins are no longer supported")
+    if any(is_primary_only_model(name) for name in selected_pins.values()):
+        raise RoutingError("Astra requires manual primary selection in the client")
     if set(selected_pins) - set(ALL_ROLES):
         raise RoutingError("Unknown pinned role")
     if preserve_primary and "controller" in selected_pins:
@@ -294,6 +302,7 @@ def resolve(payload, policy, *, pins=None, excluded=(), allowed=None, modalities
             continue
         effort = efforts.get(role, effort)
         pin = selected_pins.get(role)
+        scoped_worker = role == "worker" and task_kind == "scoped" and effort in ("medium", "high")
         candidates = []
         for name, model in models.items():
             if name not in known or name in excluded or (allowed is not None and name not in allowed):
@@ -309,15 +318,15 @@ def resolve(payload, policy, *, pins=None, excluded=(), allowed=None, modalities
                 if name != pin or (role != "controller" and TIERS[info["tier"]] < TIERS[tier]):
                     continue
             elif role == "worker":
-                # Prefer Terra for ordinary implementation. At xhigh, use Sol
-                # unless the caller explicitly pinned another eligible model.
-                eligible_tiers = {"balanced"} if effort == "xhigh" else {"bounded", "balanced"}
-                if info["tier"] not in eligible_tiers:
+                # Only a deliberately scoped packet can select Terra automatically.
+                if info["tier"] != "balanced" and not (scoped_worker and info["tier"] == "bounded"):
                     continue
             elif info["tier"] != tier:
                 continue
             candidates.append(name)
         preferences = policy.get("role_preferences", {}).get(role, [])
+        if role == "worker" and scoped_worker:
+            preferences = ["gpt-6.1-terra", *preferences]
         preference_rank = {name: len(preferences) - index for index, name in enumerate(preferences)}
         candidates.sort(key=lambda n: (preference_rank.get(n, 0), known[n]["rank"], models[n]["isDefault"], n), reverse=True)
         if not candidates:
@@ -644,6 +653,8 @@ def render(document, directory, skill=SKILL):
     """Generate a NEW staging directory. Installation remains a syntax-aware merge."""
     if any(is_removed_model(b.get("model")) for b in document["bindings"].values()):
         raise RoutingError("Cannot render removed GPT-5.6 bindings")
+    if any(is_primary_only_model(b.get("model")) for b in document["bindings"].values()):
+        raise RoutingError("Astra requires manual primary selection in the client")
     if document["unresolved"]:
         raise RoutingError("Cannot render an incomplete role binding")
     directory = Path(directory)
@@ -695,7 +706,7 @@ def main(argv=None):
     parser.add_argument("--role", choices=list(ALL_ROLES) + list(ALIASES), help="require only this role to resolve")
     parser.add_argument("--preserve-primary", action="store_true", help="resolve only subagents; leave primary model and effort unchanged")
     parser.add_argument("--task-kind", choices=("coding", "scoped"), default="coding",
-                        help="compatibility option; coding and scoped both use the same worker policy")
+                        help="worker routing: Sol for coding, Terra medium/high for tightly scoped tasks")
     parser.add_argument("--effort", action="append", default=[], metavar="ROLE=LEVEL",
                         help="choose supported task effort without changing capability/write boundaries")
     parser.add_argument("--output-dir", type=Path, help="render all roles into a new staging directory")

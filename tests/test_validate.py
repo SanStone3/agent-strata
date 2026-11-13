@@ -414,6 +414,20 @@ status_line = ["model-name"]
         self.assertEqual(1, code)
         self.assertIn("preserve primary model", output)
 
+    def test_astra_is_allowed_only_as_user_primary(self):
+        config = self.codex_home / "config.toml"
+        config.write_text('model = "gpt-6-astra"\n' + config.read_text())
+        code, output = self.validate(self.codex_home, bindings=self.bindings_path)
+        self.assertEqual(0, code, output)
+        worker = self.codex_home / "agents/worker.toml"
+        worker.write_text(worker.read_text().replace('gpt-6.1-sol', 'gpt-6-astra', 1))
+        config.write_text(config.read_text().replace('default_subagent_model = "gpt-6.1-sol"',
+                                                      'default_subagent_model = "gpt-6-astra"'))
+        code, output = self.validate(self.codex_home)
+        self.assertEqual(1, code)
+        self.assertIn("default subagent model cannot use Astra", output)
+        self.assertIn("worker.toml cannot use Astra as a subagent", output)
+
     def test_readonly_reviewer_cannot_become_writer(self) -> None:
         self.replace("assets/templates/codex/agents/reviewer.toml", 'sandbox_mode = "read-only"', 'sandbox_mode = "workspace-write"')
         code, output = self.validate()

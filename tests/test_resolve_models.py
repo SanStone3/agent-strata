@@ -49,7 +49,7 @@ class RoutingTests(unittest.TestCase):
     def test_current_roles_and_efforts(self):
         doc = self.resolve(catalog(model("gpt-6.1-terra")))
         self.assertEqual({}, doc["unresolved"])
-        for role, name in {"scout": "gpt-6-luna", "executor": "gpt-6-luna", "worker": "gpt-6.1-terra",
+        for role, name in {"scout": "gpt-6-luna", "executor": "gpt-6-luna", "worker": "gpt-6.1-sol",
                            "deep_worker": "gpt-6.1-sol", "reviewer": "gpt-6.1-sol"}.items():
             self.assertEqual(name, doc["bindings"][role]["model"])
         self.assertFalse(doc["access_verified"])
@@ -120,8 +120,8 @@ class RoutingTests(unittest.TestCase):
         self.assertNotIn("controller", doc["bindings"])
 
     def test_controller_recommendation_can_use_explicit_user_effort(self):
-        payload = {"models": [{"model": "gpt-6-astra", "efforts": ["high"]}]}
-        doc = self.resolve(payload, pins={"controller": "gpt-6-astra"}, preserve_primary=False,
+        payload = {"models": [{"model": "gpt-6.1-sol", "efforts": ["high"]}]}
+        doc = self.resolve(payload, pins={"controller": "gpt-6.1-sol"}, preserve_primary=False,
                            efforts={"controller": "high"})
         self.assertEqual("high", doc["bindings"]["controller"]["reasoning_effort"])
 
@@ -135,7 +135,7 @@ class RoutingTests(unittest.TestCase):
             content = (directory / "config-snippet.toml").read_text()
             self.assertFalse(any(line.startswith(("model =", "model_reasoning_effort =")) for line in content.splitlines()))
         with self.assertRaisesRegex(R.RoutingError, "Cannot combine"):
-            self.resolve(preserve_primary=True, pins={"controller": "gpt-6-astra"})
+            self.resolve(preserve_primary=True, pins={"controller": "gpt-6.1-sol"})
 
     def test_new_minor_version_is_numeric_not_lexical(self):
         self.policy["role_preferences"].pop("worker", None)
@@ -268,9 +268,17 @@ class RoutingTests(unittest.TestCase):
     def test_pin_cannot_lower_minimum_capability(self):
         self.assertIn("reviewer", self.resolve(pins={"reviewer": "gpt-6-luna"})["unresolved"])
 
-    def test_explicit_stronger_pin_allowed(self):
-        doc = self.resolve(pins={"worker": "gpt-6-astra"})
-        self.assertEqual("gpt-6-astra", doc["bindings"]["worker"]["model"])
+    def test_astra_requires_manual_primary_selection(self):
+        for name in ("gpt-6-astra", "openai/gpt-6.2-astra-20261101"):
+            for role in ("worker", "controller"):
+                with self.subTest(name=name, role=role), self.assertRaisesRegex(R.RoutingError, "manual primary selection"):
+                    self.resolve(pins={role: name}, preserve_primary=False)
+            with self.subTest(name=name), self.assertRaisesRegex(R.RoutingError, "manual primary selection"):
+                self.policy["automatic_models"].append(name)
+                try:
+                    self.resolve()
+                finally:
+                    self.policy["automatic_models"].pop()
 
     def test_missing_tier_does_not_auto_escalate(self):
         self.assertIn("worker", self.resolve({"models": [model("gpt-6-astra")]})["unresolved"])

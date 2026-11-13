@@ -1,8 +1,8 @@
 ---
 name: strata
-description: Delegate independent coding, research and review to native Codex or Claude Code subagents. In Codex, route focused evidence to Luna, ordinary coding to Terra and complex tasks to Sol; do not use for trivial sequential work.
+description: Delegate independent coding, research and review to native Codex or Claude Code subagents. In Codex, route focused evidence to Luna, tightly scoped work to Terra and coding tasks to Sol; do not use for trivial sequential work.
 metadata:
-  version: "2026.11.13.1"
+  version: "2026.11.13.2"
 ---
 
 # Strata
@@ -17,16 +17,17 @@ When native delegation is allowed, look for a self-contained implementation, evi
 |---|---|
 | Known path, short search, small sequential edit | Direct tools |
 | Bounded code or test discovery, log triage, extraction, summary or exact mechanical execution | Luna `low/medium` with `scout` (read-only) or `executor` |
-| Ordinary feature, bug fix, refactor or test change with understood contracts and clear checks | Terra `medium` with `worker` |
-| More involved work with stable contracts and clear checks, including writing, vision or computer use | Terra `medium/high` with `worker` |
+| Ordinary bug fix, feature, refactor or test change requiring code reading, implementation and verification | Sol `medium` with `worker` |
+| Small code change with a known approach, stable contract and quick check | Sol `low` when supported, or Terra `medium` for a deliberately scoped packet |
+| Scoped writing, vision or computer use with clear checks | Terra `medium`, `high` when extra depth is justified |
 | Difficult implementation or cross-module diagnosis | Sol `high` with `deep_worker` from the first pass |
 | Ambiguous invariants, high-impact failure, conflicting evidence or consequential independent review | Sol `xhigh` with `deep_worker` or read-only `reviewer` |
 
-Choose the capability floor from contract uncertainty, failure impact and strength of the checks. Use Sol for work that needs it from the start. For eligible options compare Intelligence Index against **cost, time and output tokens per task**, then account for local evidence, context and integration overhead. When a check exposes deeper uncertainty, inspect the partial result and hand off the remaining problem to Sol. Keep the required tests and review. See [cost-control.md](references/cost-control.md) for the benchmark and [claude.md](references/claude.md) for Claude's independent routing.
+Choose the capability floor from contract uncertainty, failure impact and strength of the checks. For coding, weigh relevant terminal and coding evaluations alongside Intelligence Index, cost, time and output tokens per task. Use time to accepted fix, failed checks and rework from comparable project tasks to calibrate the route. If a scoped child stalls or the first meaningful check exposes an uncertain root cause, inspect the partial work and pass the remaining problem to Sol. Keep the required tests and review. See [cost-control.md](references/cost-control.md) and [Claude routing](references/claude.md).
 
 ## Orchestrate
 
-- The current CLI/App user selection owns the primary model and effort, including later user switches. Keep primary settings out of skill updates. Children keep their creation model. Escalation uses a new compact packet.
+- The current CLI/App user selection owns the primary model and effort, including later user switches. Astra is reserved for a primary model manually selected by the user. Select a supported Luna, Terra or Sol model explicitly for a child if it would inherit Astra. Keep primary settings out of skill updates. Children keep their creation model. Escalation uses a new compact packet.
 - Strata has no numeric agent cap. Choose useful parallelism from actual host capacity, resources, cost and synthesis capacity. Default to one writer; allow more only with disjoint paths, frozen contracts and independent checks. Queue excess work. See [scaling.md](references/scaling.md).
 - Match the requested model and effort to the active native tool. Use a named role when its binding matches. If a named role pins a different model or effort, use a generic child with explicit overrides and the same task boundaries when supported. Use compact, history-free packets for explicit overrides. See [model-routing.md](references/model-routing.md) for fallback and resolution.
 - Send goal, file/contract pointers, owned paths or read-only scope, constraints, checks, stop condition and a concise result budget. Reuse evidence; do not copy transcripts or duplicate searches. Return findings/changes, locations, tests and uncertainty. See [task-contract.md](references/task-contract.md) when boundaries are unclear.

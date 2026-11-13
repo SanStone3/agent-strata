@@ -4,7 +4,7 @@ Use the active spawn tool's schema as authority for model IDs, effort, fork rule
 
 ## Task and effort
 
-`scout` and `executor` default to Luna medium. Use Luna low for exact lookups or mechanical steps with simple checks. `worker` defaults to Terra medium for ordinary coding and can use Terra high for a longer task with stable contracts. If Terra lacks the requested effort or modality, the resolver can use Sol at the same effort. Automatic worker selection at xhigh uses Sol. Start difficult implementation with `deep_worker` on Sol high. Select Sol xhigh upfront when critical invariants are ambiguous, evidence conflicts or a wrong change would be expensive to reverse. `reviewer` defaults to Sol xhigh for consequential review. The deep roles require the balanced tier or an eligible explicit pin.
+`scout` and `executor` default to Luna medium. Use Luna low for exact lookups or mechanical steps with simple checks. `worker` defaults to Sol medium for ordinary coding. Sol low is available for a small, well-understood change. Choose `--task-kind scoped` for work with a known approach and a quick acceptance check. It prefers Terra at medium/high and falls back to Sol at the same effort. Start difficult implementation with `deep_worker` on Sol high. Select Sol xhigh upfront when critical invariants are ambiguous, evidence conflicts or a wrong change would be expensive to reverse. `reviewer` defaults to Sol xhigh for consequential review.
 
 ```bash
 python3 scripts/resolve_models.py --catalog /path/to/current-catalog.json --role worker
@@ -14,7 +14,7 @@ python3 scripts/resolve_models.py --catalog /path/to/current-catalog.json \
   --effort deep_worker=xhigh --role deep_worker
 ```
 
-`--pin ROLE=MODEL` honors an eligible explicit choice without silent fallback. `--effort ROLE=LEVEL` requires the requested effort within the role contract and the model's catalog support. A harder task receives a new, bounded Sol packet after the controller inspects completed work. `--task-kind coding` and `--task-kind scoped` remain accepted for compatibility and use the same worker policy.
+`--pin ROLE=MODEL` honors an eligible explicit choice without silent fallback. Astra is reserved for the user to select directly as primary in the client. If the primary is Astra, dispatch children using supported named roles or explicit model overrides. `--effort ROLE=LEVEL` requires the requested effort within the role contract and the model's catalog support. Default `--task-kind coding` requires a balanced worker. Use `--task-kind scoped --role worker` to choose a scoped child. Render shared role defaults with `coding` so ordinary fixes use Sol medium.
 
 Tool-derived catalog format:
 
