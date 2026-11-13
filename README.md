@@ -43,7 +43,7 @@ Luna low 适合可直接核对的取证。需要合并多处证据时可以选 L
 npx -y skills@1.5.23 add SanStone3/agent-strata -g -a codex -s strata -y
 ```
 
-多个 CLI、App 或项目可以共用一个本地 `main` checkout，并将各技能目录链接到 `skills/strata`。更新时先检查本地改动，再快进 checkout。各登录入口保留自己的 `CODEX_HOME`、代理定义和模型绑定。 [共享安装和更新步骤](docs/installation.md)
+多个 CLI、App 和项目共用时，建议将技能目录链接到同一个跟踪 GitHub `main` 的 checkout。发布后同步一次，所有链接都会指向新版。需要在首次使用时跟进其他机器的发布，可在客户端全局规则里加一条同步指令。各登录入口保留自己的 `CODEX_HOME`、代理定义和模型绑定。 [共享安装和更新步骤](docs/installation.md)
 
 安装后可对 Codex 说「用 `$strata` 编排这个任务」。如果要同时启用命名角色，先按目标客户端解析并生成暂存配置，再增量合并。技能安装只负责发现技能，命名角色需要单独配置。 [命名角色配置与验证](skills/strata/references/install.md)
 

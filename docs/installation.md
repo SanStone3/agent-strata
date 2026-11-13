@@ -20,6 +20,17 @@
 验证共享技能发现、角色绑定、权限和配置；不改认证/provider，不重启活动任务。
 ```
 
-远端 main 的更新不会自动流入本地链接。维护时先检查工作树，再 fetch 和快进；有本地修改或分歧先检查，不 reset / stash 覆盖。技能数据改变后，为需要命名角色的客户端重新生成独立绑定并核验重载。没有后台更新或每轮联网开销。
+## 跟踪 GitHub 主分支
+
+发布后同步一次共享 checkout。所有项目链接都指向同步后的文件。先确认 checkout 在 `main`，`origin` 指向目标仓库，工作树干净，再快进并核对提交。
+
+```bash
+git -C /path/to/agent-strata pull --ff-only origin main
+git -C /path/to/agent-strata rev-parse HEAD origin/main
+```
+
+需要自动跟进其他机器的发布时，在客户端全局规则里指定共享路径。每个新任务首次使用 Strata 时执行上述检查和快进，同一任务后续直接复用。遇到离线、本地改动或分歧，保留现场并说明实际使用的版本。项目规则只引用共享技能。
+
+技能链接随 checkout 更新。命名角色由各客户端加载，角色或模型策略变更时分别生成绑定并核验重载。 [客户端合并步骤](../skills/strata/references/install.md#merge-client-configuration)
 
 Claude 的安装与角色策略保持独立，见 [Claude 配置](../skills/strata/references/claude.md)。验证命令与生效等级统一见 [validation.md](../skills/strata/references/validation.md)。卸载依据备份只撤回本次管理的链接和配置，不删除用户后续定制。

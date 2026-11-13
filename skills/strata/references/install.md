@@ -27,7 +27,7 @@ git -C /path/to/agent-strata fetch origin main
 git -C /path/to/agent-strata merge --ff-only origin/main
 ```
 
-No background updater is installed. Fetch/update at an authorized maintenance point, not on every model turn. Restart/reload only when the client requires it and no active task is disrupted. Model policy changes invalidate prior fingerprints; regenerate bindings per client before dispatching changed named roles.
+After a release, sync the shared checkout once and verify that `HEAD` matches `origin/main`. To pick up releases made elsewhere, a host owner may configure a global rule to check and fast-forward the shared checkout on first Strata use in a new task. Reuse that revision for later turns in the task. If the check fails, report the current revision and preserve local work. Model policy changes invalidate prior fingerprints. Regenerate bindings per client for changed named roles and verify client reload at a supported session boundary.
 
 A snapshot installation is also available:
 
